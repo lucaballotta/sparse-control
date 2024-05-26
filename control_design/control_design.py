@@ -58,6 +58,8 @@ class Designer:
         A_curr = np.eye(self.n)
         col_space_contr_mat = None
         rk_contr_mat = 0
+        ch_cand_dep = [None] * self.cost.h
+        can_select = 0
         for k in range(self.cost.h):
 
             # iteration k optimizes the input channels applied at the (h-k)-th time step
@@ -75,15 +77,15 @@ class Designer:
 
             # columns of B s.t. AB_s spans complement to column space of A^(k+1)
             # but not to column space of A^k
-            ch_cand = list(np.where(~im_AB.any(axis=0))[0])
+            ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
             ch_not_cand = list(np.where(~im_B.any(axis=0))[0])
-            ch_cand = list(set(ch_cand) - set(ch_not_cand))
-            B_cand = B_curr[:, ch_cand]
+            ch_cand_ctrl = list(set(ch_cand_ctrl) - set(ch_not_cand))
+            B_cand = B_curr[:, ch_cand_ctrl]
 
             # independent columns among found ones
             # these are needed for controllability
-            _, ch_cand_ind = self.independent_cols(B_cand)
-            schedule_k = list(ch_cand_ind)
+            _, ch_cand_ctrl_ind = self.independent_cols(B_cand)
+            schedule_k = list(ch_cand_ctrl_ind)
 
             # greedy selection of remaining channels, if budget not exhausted
             if self.s > len(schedule_k):
@@ -92,16 +94,16 @@ class Designer:
                     
                     # priority to columns that increase rank of controllability matrix
                     _, ch_cand_ind = self.independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
-                    schedule_k = self.greedy_selection_pw(k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs))
+                    schedule_k = self.greedy_selection_k(k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), eps=EPS)
 
                     # update column space of controllability matrix
                     col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
                     rk_contr_mat += len(schedule_k)
 
-                # greedy selection of dependent columns, if budget not exhausted
+                # store remaining candidate columns, if budget not exhausted
                 if self.s > len(schedule_k):
-                    ch_cand_dep = list(set(ch_cand) - set(ch_cand_ind))
-                    schedule_k = self.greedy_selection_pw(k, B_curr, ch_cand_dep, schedule_k, deepcopy(Bs))
+                    can_select += self.s - len(schedule_k)
+                    ch_cand_dep[k] = list(set(ch_cand) - set(ch_cand_ind))
 
             # store schedule
             schedule_best[-1-k] = deepcopy(schedule_k)
@@ -111,6 +113,28 @@ class Designer:
             A_curr = A_prod
 
         cost_best = self.cost.compute(self.A, Bs)
+
+        # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
+        Bs_cand = deepcopy(Bs)
+        while can_select > 0:
+            cand_best = None
+            for k in range(self.cost.h):
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[-1-k]
+                for cand in ch_cand_dep[k]:
+                    Bs_cand[-1-k] = np.hstack([Bs[-1-k], B_curr[:, cand]])
+                    cost_cand = self.cost.compute(self.A, Bs_cand)
+                    if cost_cand < cost_best:
+                        cand_best = [k, cand]
+                        cost_best = cost_cand
+
+            if cand_best is not None:
+                k, cand = cand_best[0], cand_best[1]
+                schedule_best[-1-k].append(cand)
+                ch_cand_dep[k].remove(cand)
+                can_select -= 1
+
+            else:
+                break
         
         return schedule_best, cost_best
 
@@ -120,42 +144,96 @@ class Designer:
         Bs = [deepcopy(self.B)] * self.cost.h if isinstance(self.B, np.ndarray) else deepcopy(self.B)
         col_space_contr_mat = None
         rk_contr_mat = 0
+        ch_cand_dep = [None] * self.cost.h
+        can_select = 0
         for k in range(self.cost.h):
 
             # iteration k optimizes the input channels applied at the k-th time step
             B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-            im_B = np.matmul(np.linalg.matrix_power(self.A, self.cost.h - 1 - k), B_curr)
-            schedule_k = []
-            if rk_contr_mat < self.n:
-                
-                # priority to columns that increase rank of controllability matrix
-                _, ch_cand_ind = self.independent_cols(im_B, col_space_contr_mat, B_indep=True)
-                schedule_k = self.greedy_selection_pw(-1-k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs))
+            
+            # image of B through A^(h-k-1)
+            A_curr = np.linalg.matrix_power(self.A, self.cost.h - 1 - k)
+            im_B = np.matmul(A_curr, B_curr)
+            im_B[abs(im_B) < EPS] = 0
 
-                # update column space of controllability matrix
-                col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
-                rk_contr_mat += len(schedule_k)
+            if k > 0:
 
-            # greedy selection of dependent columns, if budget not exhausted
+                # image of A^(h-k-1) B through A^(h-k).T
+                A_prod = np.matmul(self.A, A_curr)
+                im_AB = np.matmul(A_prod.T, im_B)
+                im_AB[abs(im_AB) < EPS] = 0
+
+                # columns of B s.t. AB_s spans complement to column space of A^(k+1)
+                # but not to column space of A^k
+                ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
+                ch_not_cand = list(np.where(~im_B.any(axis=0))[0])
+                ch_cand_ctrl = list(set(ch_cand_ctrl) - set(ch_not_cand))
+                B_cand = B_curr[:, ch_cand_ctrl]
+
+                # independent columns among found ones
+                # these are needed for controllability
+                _, ch_cand_ctrl_ind = self.independent_cols(B_cand)
+                schedule_k = list(ch_cand_ctrl_ind)
+
+            else:
+                schedule_k = []
+
+            # greedy selection of remaining channels, if budget not exhausted
             if self.s > len(schedule_k):
-                ch_cand_dep = list(set(range(self.m)) - set(ch_cand_ind))
-                schedule_k = self.greedy_selection_pw(-1-k, B_curr, ch_cand_dep, schedule_k, deepcopy(Bs))
+                ch_cand = list(set(range(self.m)) - set(schedule_k))
+                if rk_contr_mat < self.n:
+                    
+                    # priority to columns that increase rank of controllability matrix
+                    _, ch_cand_ind = self.independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
+                    schedule_k = self.greedy_selection_k(-1-k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), EPS)
+
+                    # update column space of controllability matrix
+                    col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
+                    rk_contr_mat += len(schedule_k)
+
+                # store remaining candidate columns, if budget not exhausted
+                if self.s > len(schedule_k):
+                    can_select += self.s - len(schedule_k)
+                    ch_cand_dep[k] = list(set(ch_cand) - set(ch_cand_ind))
 
             # store schedule
             schedule_best[k] = deepcopy(schedule_k)
             Bs[k] = deepcopy(B_curr[:, schedule_k])
 
         cost_best = self.cost.compute(self.A, Bs)
+
+        # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
+        Bs_cand = deepcopy(Bs)
+        while can_select > 0:
+            cand_best = None
+            for k in range(self.cost.h):
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
+                for cand in ch_cand_dep[k]:
+                    Bs_cand[k] = np.hstack([Bs[k], B_curr[:, cand]])
+                    cost_cand = self.cost.compute(self.A, Bs_cand)
+                    if cost_cand < cost_best:
+                        cand_best = [k, cand]
+                        cost_best = cost_cand
+                        
+            if cand_best is not None:
+                k, cand = cand_best[0], cand_best[1]
+                schedule_best[k].append(cand)
+                ch_cand_dep[k].remove(cand)
+                can_select -= 1
+
+            else:
+                break
         
         return schedule_best, cost_best
     
 
-    def greedy_selection_pw(self,
+    def greedy_selection_k(self,
                             k: int,
                             B_curr: np.ndarray,
                             ch_cand: list[int],
                             schedule_k: list[int],
-                            Bs_cand: list[np.ndarray]            
+                            Bs_cand: list[np.ndarray],
+                            eps: float = 0.
     ):
         if len(schedule_k):
             Bs_cand[-1-k] = B_curr[:, schedule_k]
@@ -168,7 +246,7 @@ class Designer:
             cand_best = None
             for cand in ch_cand:
                 Bs_cand[-1-k] = B_curr[:, [*schedule_k, cand]]
-                cost_cand = self.cost.compute(self.A, Bs_cand)
+                cost_cand = self.cost.compute(self.A, Bs_cand, eps)
                 if cost_cand < cost_curr_best:
                     cand_best = cand
                     cost_curr_best = cost_cand
@@ -190,6 +268,28 @@ class Designer:
                          B: np.ndarray = None, 
                          B_indep: bool = False
     ) -> tuple[np.ndarray, list[int]]:
+        '''
+        Find linearly independent columns of given matrices.
+        If B (resp., A) is None, linearly independent columns of A (resp., B) are returned.
+        If B_indep is True,
+        linearly independent columns of A that are also linearly independent from columns of B are returned.
+        
+        Params
+        ----
+        A: np.ndarray,
+            first matrix
+        B: np.ndarray,
+            second matrix
+        B_indep: bool,
+            True if columns of B are linearly independent
+        
+        Returns
+        ----
+        ind_cols: np.ndarray,
+            linearly independent columns of given matrices
+        ind_cols_idx: list[int],
+            indices of returned columns
+        '''
         if A is None:
             return self.independent_cols(B, A)
         if B is None:
@@ -214,7 +314,22 @@ class Designer:
             ), ind_col_idx
         
     
-    def staircase(self, R: np.ndarray, tol: float = 1e-10) -> list[int]:
+    def staircase(self, R: np.ndarray, tol: float = EPS) -> list[int]:
+        '''
+        Finds indices of linearly independent columns from QR decomposition
+        
+        Params
+        ----
+        R: np.ndarray,
+            matrix R obtained from QR decomposition
+        tol: float,
+            tolerance for zeros
+        
+        Returns
+        ----
+        ind_col_idx: list[int],
+            indices of linearly independent columns 
+        '''
         ind_col_idx = []
         last_zero_row = 0
         for col_idx in range(np.shape(R)[1]):

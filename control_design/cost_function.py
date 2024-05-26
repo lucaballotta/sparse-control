@@ -22,7 +22,8 @@ class CostFunction:
 
     def log_det_cost(self, 
                      A: Union[np.ndarray, list[np.ndarray]],
-                     B: Union[np.ndarray, list[np.ndarray]]
+                     B: Union[np.ndarray, list[np.ndarray]],
+                     eps: float = 0.
     ) -> float:
         self.gramian(A, B)
         _, logabsdet = np.linalg.slogdet(self.W)
@@ -31,7 +32,8 @@ class CostFunction:
 
     def trace_cost(self,
                    A: Union[np.ndarray, list[np.ndarray]],
-                   B: Union[np.ndarray, list[np.ndarray]]
+                   B: Union[np.ndarray, list[np.ndarray]],
+                   eps: float = 0.
     ) -> float:
         self.gramian(A, B)
         return 1/np.trace(self.W)
@@ -39,14 +41,16 @@ class CostFunction:
 
     def inv_trace_cost(self, 
                        A: Union[np.ndarray, list[np.ndarray]],
-                       B: Union[np.ndarray, list[np.ndarray]]
+                       B: Union[np.ndarray, list[np.ndarray]],
+                       eps: float = 0.
     ) -> float:
         self.gramian(A, B)
         return np.trace(np.linalg.inv(self.W))
 
     def lam_min_cost(self,
                      A: Union[np.ndarray, list[np.ndarray]],
-                     B: Union[np.ndarray, list[np.ndarray]]
+                     B: Union[np.ndarray, list[np.ndarray]],
+                     eps: float = 0.
     ) -> float:
         self.gramian(A, B)
         eig_W = np.real(np.linalg.eigvals(self.W))
