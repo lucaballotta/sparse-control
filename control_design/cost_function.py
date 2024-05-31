@@ -26,7 +26,7 @@ class CostFunction:
                      eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        _, logabsdet = np.linalg.slogdet(self.W)
+        _, logabsdet = np.linalg.slogdet(self.W + eps * np.eye(len(self.W)))
         return -logabsdet
 
 
@@ -45,7 +45,8 @@ class CostFunction:
                        eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        return np.trace(np.linalg.inv(self.W))
+        return np.trace(np.linalg.inv(self.W + eps * np.eye(len(self.W))))
+
 
     def lam_min_cost(self,
                      A: Union[np.ndarray, list[np.ndarray]],
@@ -53,7 +54,7 @@ class CostFunction:
                      eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        eig_W = np.real(np.linalg.eigvals(self.W))
+        eig_W = np.real(np.linalg.eigvals(self.W + eps * np.eye(len(self.W))))
         return 1/min(eig_W)
     
 

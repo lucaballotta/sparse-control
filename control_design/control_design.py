@@ -3,6 +3,7 @@ import numpy as np
 from typing import *
 from scipy.linalg import qr
 from copy import deepcopy
+from random import random, sample
 
 from .cost_function import CostFunction
 from .utils import *
@@ -12,7 +13,7 @@ PRINT_DIGITS = 3
 
 class Designer:
 
-    ALGO_TYPES = {'greedy-b', 'greedy-f', 'relax'}
+    ALGORITHMS = {'greedy-b', 'greedy-f', 'relax'}
     SPARSITY_TYPES = {'pw', 'avg'}
 
     def __init__(self, 
@@ -32,7 +33,7 @@ class Designer:
         if not sparsity_type in self.SPARSITY_TYPES:
             raise NotImplementedError('Sparsity constraint not implemented')
         
-        if not algo in self.ALGO_TYPES:
+        if not algo in self.ALGORITHMS:
             raise NotImplementedError('Control design algorithm not implemented')
             
         self.sparsity_type = sparsity_type
@@ -52,7 +53,7 @@ class Designer:
             pass
     
 
-    def greey_algo_backwards_pw(self) -> tuple[list[int], float]:
+    def greey_algo_backwards_pw(self) -> tuple[list[list[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [deepcopy(self.B)] * self.cost.h if isinstance(self.B, np.ndarray) else deepcopy(self.B)
         A_curr = np.eye(self.n)
@@ -67,27 +68,15 @@ class Designer:
             A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-1-k]
             A_prod = np.matmul(A_curr, A_prev)
             
-            # image of B through A
-            im_B = np.matmul(A_curr, B_curr)
-            im_B[abs(im_B) < EPS] = 0
-
-            # image of A^k B through A^(k+1).T
-            im_AB = np.matmul(A_prod.T, im_B)
-            im_AB[abs(im_AB) < EPS] = 0
-
-            # columns of B s.t. AB_s spans complement to column space of A^(k+1)
-            # but not to column space of A^k
-            ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
-            ch_not_cand = list(np.where(~im_B.any(axis=0))[0])
-            ch_cand_ctrl = list(set(ch_cand_ctrl) - set(ch_not_cand))
-            B_cand = B_curr[:, ch_cand_ctrl]
+            # columns of B s.t. ColSpace{A^k B_s} complements ColSpace{A^(k+1)} but not ColSpace{A^k}
+            im_B, B_cand = self.left_kernel(A_curr, B_curr, A_prod)
 
             # independent columns among found ones
             # these are needed for controllability
             _, ch_cand_ctrl_ind = self.independent_cols(B_cand)
-            schedule_k = list(ch_cand_ctrl_ind)
+            schedule_k = ch_cand_ctrl_ind
 
-            # greedy selection of remaining channels, if budget not exhausted
+            # greedy selection of remaining channels
             if self.s > len(schedule_k):
                 ch_cand = list(set(range(self.m)) - set(schedule_k))
                 if rk_contr_mat < self.n:
@@ -139,46 +128,47 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greey_algo_forward_pw(self) -> tuple[list[int], float]:
+    def greey_algo_forward_pw(self) -> tuple[list[list[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [deepcopy(self.B)] * self.cost.h if isinstance(self.B, np.ndarray) else deepcopy(self.B)
         col_space_contr_mat = None
         rk_contr_mat = 0
         ch_cand_dep = [None] * self.cost.h
         can_select = 0
+
+        # pre-compute matrices applied to input channels
+        A_all = [np.zeros(self.n)] * self.cost.h
+        A_all[-1] = np.eye(self.n)
+        A_curr = np.eye(self.n)
+        for k in range(1, self.cost.h):
+            A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-k]
+            A_curr = np.matmul(A_curr, A_prev)
+
+            # matrix for input at k-th time step stored at location k
+            A_all[-1-k] = deepcopy(A_curr)
+
         for k in range(self.cost.h):
 
             # iteration k optimizes the input channels applied at the k-th time step
             B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-            
-            # image of B through A^(h-k-1)
-            A_curr = np.linalg.matrix_power(self.A, self.cost.h - 1 - k)
-            im_B = np.matmul(A_curr, B_curr)
-            im_B[abs(im_B) < EPS] = 0
-
             if k > 0:
-
-                # image of A^(h-k-1) B through A^(h-k).T
-                A_prod = np.matmul(self.A, A_curr)
-                im_AB = np.matmul(A_prod.T, im_B)
-                im_AB[abs(im_AB) < EPS] = 0
-
-                # columns of B s.t. AB_s spans complement to column space of A^(k+1)
-                # but not to column space of A^k
-                ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
-                ch_not_cand = list(np.where(~im_B.any(axis=0))[0])
-                ch_cand_ctrl = list(set(ch_cand_ctrl) - set(ch_not_cand))
-                B_cand = B_curr[:, ch_cand_ctrl]
+                
+                # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)} but not ColSpace{A^(h-k-1)}
+                im_B, B_cand = self.left_kernel(A_all[k], B_curr, A_all[k-1])
 
                 # independent columns among found ones
                 # these are needed for controllability
                 _, ch_cand_ctrl_ind = self.independent_cols(B_cand)
-                schedule_k = list(ch_cand_ctrl_ind)
+                schedule_k = ch_cand_ctrl_ind
 
             else:
+
+                # image of B through A^(h-k-1)
+                im_B = np.matmul(A_all[k], B_curr)
+                im_B[abs(im_B) < EPS] = 0
                 schedule_k = []
 
-            # greedy selection of remaining channels, if budget not exhausted
+            # greedy selection of remaining channels
             if self.s > len(schedule_k):
                 ch_cand = list(set(range(self.m)) - set(schedule_k))
                 if rk_contr_mat < self.n:
@@ -261,7 +251,77 @@ class Designer:
         print(f'Cost at iter {k}:', truncate_float(cost_curr_best, PRINT_DIGITS))
 
         return schedule_k
+    
 
+    def MCMC(self,
+             t_init: float = 1.,
+             t_min: float = 1e-7,
+             a: float = .1,
+             it_max: int = 1000,
+             schedule: list[list[int]] = None
+    ) -> tuple[list[list[int]], float]:
+        random_schedule = False
+        if schedule is None:
+            random_schedule = True
+            schedule = [None] * self.cost.h
+            for k in range(self.cost.h):
+                schedule[k] = sample(range(self.m, self.s))
+
+        Bs = [None] * self.cost.h
+        for k in range(self.cost.h):
+            Bs[k] = deepcopy(self.B[:, schedule[k]]) if isinstance(self.B, np.ndarray) else deepcopy(self.B[k][:, schedule[k]])
+
+        t = t_init
+        all_ch = self.cost.h * self.s
+        cost_best = self.cost.compute(self.A, Bs, EPS) if random_schedule else self.cost.compute(self.A, Bs)
+        while t > t_min:
+            for _ in range(it_max):
+
+                # select column in current schedule uniformly at random
+                test = sample(range(all_ch), 1)[0]
+                
+                # sample candidate column for same time step
+                k = test // self.s
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
+                cand_k = list(set(range(self.m)) - set(schedule[k]))
+                cand = sample(cand_k, 1)[0]
+                Bs[k][:, test] = B_curr[:, cand]
+                cost_curr = self.cost.compute(self.A, Bs, EPS)
+
+                # select candidate column according to MCMC rule
+                if cost_curr < cost_best or random() < np.exp(-(cost_best - cost_curr) / t):
+                    schedule[k].remove(test)
+                    schedule[k].append(cand)
+                    cost_best = cost_curr
+                
+                else:
+
+                    # reset tested scheduled column in input matrix
+                    Bs[k][:, cand] = B_curr[:, test]
+
+            t *= a
+
+        return schedule, cost_best
+    
+
+    def left_kernel(self, A_curr, B_curr, A_prod):
+
+        # image of B through A^k
+        im_B = np.matmul(A_curr, B_curr)
+        im_B[abs(im_B) < EPS] = 0
+
+        # remove columns in ker{A^k}
+        im_B[:, list(np.where(~im_B.any(axis=0))[0])] = []
+
+        # image of A^k B through A^(k+1).T
+        im_AB = np.matmul(A_prod.T, im_B)
+        im_AB[abs(im_AB) < EPS] = 0
+
+        # keep columns not in ker{A^(k+1).T}
+        ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
+        B_cand = B_curr[:, ch_cand_ctrl]
+        return im_B, B_cand
+    
 
     def independent_cols(self, 
                          A: np.ndarray, 

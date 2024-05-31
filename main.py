@@ -34,5 +34,12 @@ algo = 'greedy-f'
 designer = Designer(A, B, cost_func, s, sparsity, algo)
 schedule, cost = designer.design()
 
+print('greedy:')
+print('input schedule:', schedule)
+print('cost', cost)
+
+schedule, cost = designer.MCMC(schedule=schedule)
+
+print('MCMC:')
 print('input schedule:', schedule)
 print('cost', cost)
