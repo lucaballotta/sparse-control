@@ -1,3 +1,4 @@
+from matplotlib.pylab import LinAlgError
 import numpy as np
 
 from typing import *
@@ -272,32 +273,40 @@ class Designer:
             Bs[k] = deepcopy(self.B[:, schedule[k]]) if isinstance(self.B, np.ndarray) else deepcopy(self.B[k][:, schedule[k]])
 
         t = t_init
-        all_ch = self.cost.h * self.s
+        all_col = self.cost.h * self.s
         cost_best = self.cost.compute(self.A, Bs, EPS) if random_schedule else self.cost.compute(self.A, Bs)
         while t > t_min:
             for _ in range(it_max):
 
                 # select column in current schedule uniformly at random
-                test = sample(range(all_ch), 1)[0]
-                
+                col = sample(range(all_col), 1)[0]
+                k = col // self.s
+                pos_k = col % self.s
+
                 # sample candidate column for same time step
-                k = test // self.s
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 cand_k = list(set(range(self.m)) - set(schedule[k]))
                 cand = sample(cand_k, 1)[0]
-                Bs[k][:, test] = B_curr[:, cand]
-                cost_curr = self.cost.compute(self.A, Bs, EPS)
+                Bs[k][:, pos_k] = B_curr[:, cand]
+                try:
+                    cost_curr = self.cost.compute(self.A, Bs)
+                except LinAlgError:
+                    Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
+                    continue
+
+                if cost_curr < 0:
+                    print('cost is negative', self.cost.W)
+                    self.cost.compute(self.A, Bs)
 
                 # select candidate column according to MCMC rule
-                if cost_curr < cost_best or random() < np.exp(-(cost_best - cost_curr) / t):
-                    schedule[k].remove(test)
-                    schedule[k].append(cand)
+                if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
+                    schedule[k][pos_k] = cand
                     cost_best = cost_curr
                 
                 else:
 
                     # reset tested scheduled column in input matrix
-                    Bs[k][:, cand] = B_curr[:, test]
+                    Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
 
             t *= a
 

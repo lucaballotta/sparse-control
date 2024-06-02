@@ -45,7 +45,9 @@ class CostFunction:
                        eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        return np.trace(np.linalg.inv(self.W + eps * np.eye(len(self.W))))
+        S = np.linalg.svd(self.W + eps * np.eye(len(self.W)), compute_uv=False)
+        return sum([1/s for s in S]) if S.all() else np.inf
+    # np.trace(np.linalg.inv(self.W + eps * np.eye(len(self.W))))
 
 
     def lam_min_cost(self,
