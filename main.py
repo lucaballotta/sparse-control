@@ -38,7 +38,14 @@ print('greedy:')
 print('input schedule:', schedule)
 print('cost', cost)
 
-schedule, cost = designer.MCMC(it_max=1000,schedule=schedule)
+designer.set_algo('mcmc')
+schedule, cost = designer.design(schedule=schedule)
+
+print('greedy + MCMC:')
+print('input schedule:', schedule)
+print('cost', cost)
+
+schedule, cost = designer.design()
 
 print('MCMC:')
 print('input schedule:', schedule)

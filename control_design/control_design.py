@@ -14,7 +14,7 @@ PRINT_DIGITS = 3
 
 class Designer:
 
-    ALGORITHMS = {'greedy-b', 'greedy-f', 'relax'}
+    ALGORITHMS = {'greedy-b', 'greedy-f', 'mcmc', 'relax'}
     SPARSITY_TYPES = {'pw', 'avg'}
 
     def __init__(self, 
@@ -32,21 +32,30 @@ class Designer:
         self.cost = cost
         self.s = sparsity
         if not sparsity_type in self.SPARSITY_TYPES:
-            raise NotImplementedError('Sparsity constraint not implemented')
+            raise NotImplementedError('Requested sparsity constraint not implemented')
         
         if not algo in self.ALGORITHMS:
-            raise NotImplementedError('Control design algorithm not implemented')
+            raise NotImplementedError('Requested algorithm not implemented')
             
         self.sparsity_type = sparsity_type
         self.algo = algo
         
 
-    def design(self) -> tuple[list[int], float]:
+    def set_algo(self, algo: str):
+        if not algo in self.ALGORITHMS:
+            raise NotImplementedError('Requested algorithm not implemented')
+            
+        self.algo = algo
+
+
+    def design(self, *args, **kwargs) -> tuple[list[int], float]:
         if self.sparsity_type == 'pw':
             if self.algo == 'greedy-b':
-                return self.greey_algo_backwards_pw()
+                return self.greey_algo_backwards_pw(*args, **kwargs)
             elif self.algo == 'greedy-f':
-                return self.greey_algo_forward_pw()
+                return self.greey_algo_forward_pw(*args, **kwargs)
+            elif self.algo == 'mcmc':
+                return self.MCMC(*args, **kwargs)
             elif self.algo == 'relax':
                 pass
             
@@ -54,7 +63,7 @@ class Designer:
             pass
     
 
-    def greey_algo_backwards_pw(self) -> tuple[list[list[int]], float]:
+    def greey_algo_backwards_pw(self, verbose: bool = False) -> tuple[list[list[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [deepcopy(self.B)] * self.cost.h if isinstance(self.B, np.ndarray) else deepcopy(self.B)
         A_curr = np.eye(self.n)
@@ -84,7 +93,7 @@ class Designer:
                     
                     # priority to columns that increase rank of controllability matrix
                     _, ch_cand_ind = self.independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
-                    schedule_k = self.greedy_selection_k(k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), eps=EPS)
+                    schedule_k = self.greedy_selection_k(k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), EPS, verbose)
 
                     # update column space of controllability matrix
                     col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
@@ -129,7 +138,7 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greey_algo_forward_pw(self) -> tuple[list[list[int]], float]:
+    def greey_algo_forward_pw(self, verbose: bool = False) -> tuple[list[list[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [deepcopy(self.B)] * self.cost.h if isinstance(self.B, np.ndarray) else deepcopy(self.B)
         col_space_contr_mat = None
@@ -176,7 +185,7 @@ class Designer:
                     
                     # priority to columns that increase rank of controllability matrix
                     _, ch_cand_ind = self.independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
-                    schedule_k = self.greedy_selection_k(-1-k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), EPS)
+                    schedule_k = self.greedy_selection_k(-1-k, B_curr, ch_cand_ind, schedule_k, deepcopy(Bs), EPS, verbose)
 
                     # update column space of controllability matrix
                     col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
@@ -224,7 +233,8 @@ class Designer:
                             ch_cand: list[int],
                             schedule_k: list[int],
                             Bs_cand: list[np.ndarray],
-                            eps: float = 0.
+                            eps: float = 0.,
+                            verbose: bool = False
     ):
         if len(schedule_k):
             Bs_cand[-1-k] = B_curr[:, schedule_k]
@@ -249,7 +259,8 @@ class Designer:
             else:
                 break
 
-        print(f'Cost at iter {k}:', truncate_float(cost_curr_best, PRINT_DIGITS))
+        if verbose:
+            print(f'Cost at iter {k}:', truncate_float(cost_curr_best, PRINT_DIGITS))
 
         return schedule_k
     
@@ -258,7 +269,7 @@ class Designer:
              t_init: float = 1.,
              t_min: float = 1e-7,
              a: float = .1,
-             it_max: int = 1000,
+             it_max: int = 5000,
              schedule: list[list[int]] = None
     ) -> tuple[list[list[int]], float]:
         random_schedule = False
@@ -266,7 +277,7 @@ class Designer:
             random_schedule = True
             schedule = [None] * self.cost.h
             for k in range(self.cost.h):
-                schedule[k] = sample(range(self.m, self.s))
+                schedule[k] = sample(range(self.m), self.s)
 
         Bs = [None] * self.cost.h
         for k in range(self.cost.h):
@@ -293,10 +304,6 @@ class Designer:
                 except LinAlgError:
                     Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
                     continue
-
-                if cost_curr < 0:
-                    print('cost is negative', self.cost.W)
-                    self.cost.compute(self.A, Bs)
 
                 # select candidate column according to MCMC rule
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
