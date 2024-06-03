@@ -12,10 +12,10 @@ class CostFunction:
             self.compute = self.log_det_cost
         elif cost_func == 'tr':
             self.compute = self.trace_cost
-        elif cost_func == 'inv-tr':
-            self.compute = self.inv_trace_cost
-        elif cost_func == 'lam-min':
-            self.compute = self.lam_min_cost
+        elif cost_func == 'tr-inv':
+            self.compute = self.trace_inv_cost
+        elif cost_func == 'lambda-min':
+            self.compute = self.lambda_min_cost
         else:
             raise NotImplementedError('Cost function not implemented')
 
@@ -39,25 +39,24 @@ class CostFunction:
         return 1/np.trace(self.W)
     
 
-    def inv_trace_cost(self, 
+    def trace_inv_cost(self, 
                        A: Union[np.ndarray, list[np.ndarray]],
                        B: Union[np.ndarray, list[np.ndarray]],
                        eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        S = np.linalg.svd(self.W + eps * np.eye(len(self.W)), compute_uv=False)
-        return sum([1/s for s in S]) if S.all() else np.inf
-    # np.trace(np.linalg.inv(self.W + eps * np.eye(len(self.W))))
+        singular_values = np.linalg.svd(self.W + eps * np.eye(len(self.W)), compute_uv=False)
+        return sum([1/s for s in singular_values]) if singular_values.all() else np.inf
 
 
-    def lam_min_cost(self,
-                     A: Union[np.ndarray, list[np.ndarray]],
-                     B: Union[np.ndarray, list[np.ndarray]],
-                     eps: float = 0.
+    def lambda_min_cost(self,
+                        A: Union[np.ndarray, list[np.ndarray]],
+                        B: Union[np.ndarray, list[np.ndarray]],
+                        eps: float = 0.
     ) -> float:
         self.gramian(A, B)
-        eig_W = np.real(np.linalg.eigvals(self.W + eps * np.eye(len(self.W))))
-        return 1/min(eig_W)
+        singular_values = np.linalg.svd(self.W + eps * np.eye(len(self.W)), compute_uv=False)
+        return 1/min(singular_values) if singular_values.all() else np.inf
     
 
     def gramian(self,
