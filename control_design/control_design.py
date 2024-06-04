@@ -59,7 +59,7 @@ class Designer:
         elif self.algo == 'greedy-f':
             return self.greedy_forward(*args, **kwargs)
         elif self.algo == 'mcmc':
-            return self.MCMC(*args, **kwargs)
+            return self.mcmc(*args, **kwargs)
         elif self.algo == 'relax':
             pass
     
@@ -127,11 +127,11 @@ class Designer:
             A_prod = np.matmul(A_curr, A_prev)
             
             # columns of B s.t. ColSpace{A^k B_s} complements ColSpace{A^(k+1)} but not ColSpace{A^k}
-            im_B, B_cand = left_kernel(A_curr, B_curr, A_prod)
+            im_B, ch_cand_ctrl = left_kernel(A_curr, B_curr, A_prod)
 
             # independent columns among found ones
             # these are needed for controllability
-            _, ch_cand_ctrl_ind = independent_cols(B_cand)
+            _, ch_cand_ctrl_ind = independent_cols(B_curr[:, ch_cand_ctrl])
             schedule_k = ch_cand_ctrl_ind
 
             # greedy selection of remaining channels
@@ -188,11 +188,11 @@ class Designer:
             if k > 0:
                 
                 # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)} but not ColSpace{A^(h-k-1)}
-                im_B, B_cand = left_kernel(A_all[k], B_curr, A_all[k-1])
+                im_B, ch_cand_ctrl = left_kernel(A_all[k], B_curr, A_all[k-1])
 
                 # independent columns among found ones
                 # these are needed for controllability
-                _, ch_cand_ctrl_ind = independent_cols(B_cand)
+                _, ch_cand_ctrl_ind = independent_cols(B_curr[:, ch_cand_ctrl])
                 schedule_k = ch_cand_ctrl_ind
 
             else:
@@ -268,13 +268,14 @@ class Designer:
         return schedule_k
     
 
-    def MCMC(self,
+    def mcmc(self,
              t_init: float = 1.,
              t_min: float = 1e-7,
              a: float = .1,
              it_max: int = 5000,
              schedule: list[list[int]] = None,
-             eps: float = 0.
+             eps: float = 0.,
+             check_rank: bool = False
     ) -> tuple[list[list[int]], float]:
         random_schedule = False
         if schedule is None:
@@ -290,6 +291,16 @@ class Designer:
         t = t_init
         all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps) if random_schedule else self.cost.compute(self.A, Bs)
+        if check_rank:
+            rank = self.cost.get_gramian_rank()
+            A_all = [np.zeros(self.n)] * self.cost.h
+            A_all[-1] = np.eye(self.n)
+            A_curr = np.eye(self.n)
+            for k in range(1, self.cost.h):
+                A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-k]
+                A_curr = np.matmul(A_curr, A_prev)
+                A_all[-1-k] = deepcopy(A_curr)
+
         while t > t_min:
             for _ in range(it_max):
 
@@ -298,17 +309,52 @@ class Designer:
                 k = col // self.s
                 pos_k = col % self.s
 
-                # sample candidate column for same time step
+                # sample candidate column for same time step                    
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 cand_k = list(set(range(self.m)) - set(schedule[k]))
                 cand = sample(cand_k, 1)[0]
+                if check_rank:
+                    _, ch_ctrl = left_kernel(A_all[k], B_curr, A_all[k-1])
+                    _, ch_ctrl_ind = independent_cols(B_curr[:, ch_ctrl])
+                    if pos_k in ch_ctrl_ind:
+                        span_kernel = True
+                        while cand not in ch_ctrl:
+                            cand_k.remove(cand)
+                            try:
+                                cand = sample(cand_k, 1)[0]
+                            except ValueError:
+                                span_kernel = False
+                                break
+
+                        if not span_kernel:
+                            continue
+
                 Bs[k][:, pos_k] = B_curr[:, cand]
+                if check_rank:
+                    self.cost.update_gramian(self.A, Bs)
+                    drop_rank = False
+                    while rank > self.cost.get_gramian_rank():
+                        cand_k.remove(cand)
+                        try:
+                            cand = sample(cand_k, 1)[0]
+                            Bs[k][:, pos_k] = B_curr[:, cand]
+                            self.cost.update_gramian(self.A, Bs)
+
+                        except ValueError:
+                            drop_rank = True
+                            break
+
+                    if drop_rank:
+                        continue
+
                 cost_curr = self.cost.compute_robust(self.A, Bs, eps)
 
                 # select candidate column according to MCMC rule
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
                     schedule[k][pos_k] = cand
                     cost_best = cost_curr
+                    if check_rank and rank < self.cost.get_gramian_rank():
+                        rank = self.cost.get_gramian_rank()
                 
                 else:
 

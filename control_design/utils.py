@@ -88,7 +88,7 @@ def independent_cols(A: np.ndarray,
         ), ind_col_idx
         
 
-def left_kernel(A_curr, B_curr, A_prod):
+def left_kernel(A_curr, B_curr, A_prod) -> tuple[np.ndarray, list[int]]:
 
     # image of B through A^k
     im_B = np.matmul(A_curr, B_curr)
@@ -103,8 +103,7 @@ def left_kernel(A_curr, B_curr, A_prod):
 
     # keep columns not in ker{A^(k+1).T}
     ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
-    B_cand = B_curr[:, ch_cand_ctrl]
-    return im_B, B_cand
+    return im_B, ch_cand_ctrl
 
 
 def fxn():

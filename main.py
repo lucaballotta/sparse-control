@@ -1,11 +1,10 @@
-from curses.ascii import BS
 from numpy.linalg import matrix_rank
 
 from control_design.control_design import Designer
 from control_design.cost_function import CostFunction
 
 # import model matrices A and B
-from examples.ex1 import *
+from examples.ex2 import *
 
 # sparsity constraint
 sparsity = max(len(A) - matrix_rank(A), 1)
@@ -14,7 +13,7 @@ sparsity = max(len(A) - matrix_rank(A), 1)
 h = len(A)
 
 # cost function
-cost_func = CostFunction(h, 'lambda-min')
+cost_func = CostFunction(h, 'tr-inv')
 
 # fully actuated
 cost_fully_actuated = cost_func.compute(A, B)
@@ -43,7 +42,7 @@ print('input schedule:', schedule)
 print(f'cost: {cost} \n')
 
 # MCMC
-schedule, cost = designer.design(eps=1e-10)
+schedule, cost = designer.design(eps=1e-10, check_rank=True)
 
 print('MCMC:')
 print('input schedule:', schedule)

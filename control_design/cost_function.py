@@ -8,23 +8,45 @@ from matplotlib.pylab import LinAlgError
 from .utils import fxn
 
 EPS = 1e-10
+COST_FUNCTIONS = {'logdet', 'tr', 'tr-inv', 'lambda-min'}
 
 class CostFunction:
 
     def __init__(self, h: int, cost_func: str) -> None:
-        self.h = h
-        self.contr_mat = None
-        self.W = None
-        if cost_func == 'logdet':
-            self.compute = self.log_det_cost
-        elif cost_func == 'tr':
-            self.compute = self.trace_cost
-        elif cost_func == 'tr-inv':
-            self.compute = self.trace_inv_cost
-        elif cost_func == 'lambda-min':
-            self.compute = self.lambda_min_cost
-        else:
+        if cost_func not in COST_FUNCTIONS:
             raise NotImplementedError('Cost function not implemented')
+        
+        if h <= 0:
+            raise ValueError('InputError: horizon h must be greater than zero')
+        
+        self.cost_func = cost_func
+        self.h = h
+        self._contr_mat = None
+        self._W = None
+            
+        
+    def get_gramian(self):
+        return self._W
+    
+
+    def get_gramian_rank(self):
+        return np.linalg.matrix_rank(self._W)
+    
+
+    def compute(self,
+                A: Union[np.ndarray, list[np.ndarray]],
+                B: Union[np.ndarray, list[np.ndarray]],
+                eps: float = 0.
+    ) -> float:
+        self.update_gramian(A, B)
+        if self.cost_func == 'logdet':
+            return self.log_det_cost(eps)
+        elif self.cost_func == 'tr':
+            return self.trace_cost()
+        elif self.cost_func == 'tr-inv':
+            return self.trace_inv_cost(eps)
+        elif self.cost_func == 'lambda-min':
+            return self.lambda_min_cost(eps)
         
 
     def compute_robust(self,
@@ -43,38 +65,23 @@ class CostFunction:
         return cost_best
 
 
-    def log_det_cost(self, 
-                     A: Union[np.ndarray, list[np.ndarray]],
-                     B: Union[np.ndarray, list[np.ndarray]],
-                     eps: float = 0.
-    ) -> float:
-        self.gramian(A, B)
-        _, logabsdet = np.linalg.slogdet(self.W + eps * np.eye(len(self.W)))
+    def log_det_cost(self, eps: float = 0.) -> float:
+        _, logabsdet = np.linalg.slogdet(self._W + eps * np.eye(len(self._W)))
         return -logabsdet
 
 
-    def trace_cost(self,
-                   A: Union[np.ndarray, list[np.ndarray]],
-                   B: Union[np.ndarray, list[np.ndarray]],
-                   eps: float = 0.
-    ) -> float:
-        self.gramian(A, B)
-        return 1/np.trace(self.W)
+    def trace_cost(self) -> float:
+        return 1/np.trace(self._W)
     
 
-    def trace_inv_cost(self, 
-                       A: Union[np.ndarray, list[np.ndarray]],
-                       B: Union[np.ndarray, list[np.ndarray]],
-                       eps: float = 0.
-    ) -> float:
-        self.gramian(A, B)
+    def trace_inv_cost(self, eps: float = 0.) -> float:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             fxn()
             return np.trace(
                 scipy.linalg.solve(
-                    self.W + eps * np.eye(len(self.W)),
-                    np.eye(len(self.W)),
+                    self._W + eps * np.eye(len(self._W)),
+                    np.eye(len(self._W)),
                     lower = True,
                     assume_a = 'pos',
                     overwrite_b = True
@@ -82,17 +89,12 @@ class CostFunction:
             )
 
 
-    def lambda_min_cost(self,
-                        A: Union[np.ndarray, list[np.ndarray]],
-                        B: Union[np.ndarray, list[np.ndarray]],
-                        eps: float = 0.
-    ) -> float:
-        self.gramian(A, B)
-        singular_values = np.linalg.svd(self.W + eps * np.eye(len(self.W)), compute_uv=False)
+    def lambda_min_cost(self, eps: float = 0.) -> float:
+        singular_values = np.linalg.svd(self._W + eps * np.eye(len(self._W)), compute_uv=False)
         return 1/min(singular_values) if singular_values.all() else np.inf
     
 
-    def gramian(self,
+    def update_gramian(self,
                 A: Union[np.ndarray, list[np.ndarray]],
                 B: Union[np.ndarray, list[np.ndarray]],
                 h: int = None
@@ -101,26 +103,26 @@ class CostFunction:
             h = self.h
 
         if isinstance(A, np.ndarray) and isinstance(B, np.ndarray):
-            self.contr_mat = B
-            self.W = np.matmul(B, B.T)
+            self._contr_mat = B
+            self._W = np.matmul(B, B.T)
             for k in range(1, h):
-                self.add_to_gramian(A, B, k)
+                self._add_to_gramian(A, B, k)
 
         if isinstance(A, np.ndarray) and isinstance(B, list):
-            self.contr_mat = B[-1]
-            self.W = np.matmul(B[-1], B[-1].T)
+            self._contr_mat = B[-1]
+            self._W = np.matmul(B[-1], B[-1].T)
             for k in range(1, min(h, len(B))):
-                self.add_to_gramian(A, B[-1-k], k)
+                self._add_to_gramian(A, B[-1-k], k)
 
             for k in range(min(h, len(B)), h):
-                self.add_to_gramian(A, B[0], k)
+                self._add_to_gramian(A, B[0], k)
     
 
-    def add_to_gramian(self,
+    def _add_to_gramian(self,
                        A: np.ndarray,
                        B: np.ndarray, 
                        k: int
     ) -> None:
         phi_k = np.matmul(np.linalg.matrix_power(A, k), B)
-        self.contr_mat = np.hstack([phi_k, self.contr_mat])
-        self.W = self.W + np.matmul(phi_k, phi_k.T)
+        self._contr_mat = np.hstack([phi_k, self._contr_mat])
+        self._W = self._W + np.matmul(phi_k, phi_k.T)
