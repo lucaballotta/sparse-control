@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 
 from scipy.linalg import qr
@@ -104,3 +105,7 @@ def left_kernel(A_curr, B_curr, A_prod):
     ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
     B_cand = B_curr[:, ch_cand_ctrl]
     return im_B, B_cand
+
+
+def fxn():
+    warnings.warn("deprecated", DeprecationWarning)

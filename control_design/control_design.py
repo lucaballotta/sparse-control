@@ -1,4 +1,3 @@
-from matplotlib.pylab import LinAlgError
 import numpy as np
 
 from typing import *
@@ -94,7 +93,7 @@ class Designer:
                 for cand in ch_cand[k]:
                     Bs_cand = deepcopy(Bs)
                     Bs_cand[k] = np.hstack([Bs[k], np.reshape(B_curr[:, cand], (self.n, -1))]) if Bs[k].any() else np.reshape(B_curr[:, cand], (self.n, -1))
-                    cost_cand = self.cost.compute(self.A, Bs_cand, eps)
+                    cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
                     if cost_cand < cost_best:
                         cand_best = (k, cand, B_curr[:, cand])
                         cost_best = cost_cand
@@ -290,7 +289,7 @@ class Designer:
 
         t = t_init
         all_col = self.cost.h * self.s
-        cost_best = self.cost.compute(self.A, Bs, eps) if random_schedule else self.cost.compute(self.A, Bs)
+        cost_best = self.cost.compute_robust(self.A, Bs, eps) if random_schedule else self.cost.compute(self.A, Bs)
         while t > t_min:
             for _ in range(it_max):
 
@@ -304,11 +303,7 @@ class Designer:
                 cand_k = list(set(range(self.m)) - set(schedule[k]))
                 cand = sample(cand_k, 1)[0]
                 Bs[k][:, pos_k] = B_curr[:, cand]
-                try:
-                    cost_curr = self.cost.compute(self.A, Bs, eps)
-                except LinAlgError:
-                    Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
-                    continue
+                cost_curr = self.cost.compute_robust(self.A, Bs, eps)
 
                 # select candidate column according to MCMC rule
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
