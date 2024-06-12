@@ -114,8 +114,6 @@ class Designer:
                     im_col = np.reshape(np.matmul(A_vec[k], col), (self.n, -1))
                     contr_mat = np.hstack([contr_mat, im_col]) if contr_mat is not None else im_col
                     rank_contr_mat += 1
-                    print('rk true', np.linalg.matrix_rank(contr_mat))
-                    print('rk th', rank_contr_mat)
                     if rank_contr_mat == self.n:
                         break
 
@@ -134,6 +132,10 @@ class Designer:
 
             else:
                 break
+
+        if self.cost.get_gramian_rank() < self.n:
+            cost_best = np.inf
+            
 
         return schedule, cost_best
     
@@ -215,11 +217,11 @@ class Designer:
             if k > 0 and rk_contr_mat < self.n:
                                 
                 # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
-                im_AB, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
-                
+                im_AB, im_K, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
+
                 # greedily select independent columns among found ones
                 # these are needed for controllability
-                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=A_all[k])
+                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=im_K)
                 
                 # update column space of controllability matrix
                 col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
@@ -289,8 +291,8 @@ class Designer:
                     ch_cand_copy = deepcopy(ch_cand)
                     for cand in ch_cand_copy:
                         _, idx = independent_cols(
-                            np.matmul(rank_mat, np.reshape(B_curr[:, cand], (-1, 1))),
-                            np.matmul(rank_mat, B_curr[:, schedule_k]),
+                            rank_mat[:, [cand]],
+                            rank_mat[:, schedule_k],
                             B_indep=True
                         )
                         if not len(idx):
@@ -351,11 +353,10 @@ class Designer:
                 cand_k = list(set(range(self.m)) - set(schedule[k]))
                 cand = sample(cand_k, 1)[0]
                 if check_rank:
-                    _, ch_ctrl = left_kernel(A_all[k], B_curr, A_all[k-1])
-                    _, ch_ctrl_ind = independent_cols(B_curr[:, ch_ctrl])
-                    if pos_k in ch_ctrl_ind:
+                    _, ch_ker, _ = left_kernel(A_all[k], B_curr, A_all[k-1])
+                    if pos_k in ch_ker:
                         span_kernel = True
-                        while cand not in ch_ctrl:
+                        while cand not in ch_ker:
                             cand_k.remove(cand)
                             try:
                                 cand = sample(cand_k, 1)[0]

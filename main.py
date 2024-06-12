@@ -4,7 +4,7 @@ from control_design.control_design import Designer
 from control_design.cost_function import CostFunction
 
 # import model matrices A and B
-from examples.ex2 import *
+from examples.ex1 import *
 
 # sparsity constraint
 sparsity = max(len(A) - matrix_rank(A), 1)
