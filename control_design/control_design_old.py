@@ -67,11 +67,7 @@ class Designer:
     def greedy(self, 
                ch_cand: list[list[int]] = None,
                schedule: list[list[int]] = None, 
-               eps: float = 0.,
-               check_rank: bool = False,
-               contr_mat: np.ndarray = None,
-               rank_contr_mat: int = None,
-               A_vec: list[np.ndarray] = None
+               eps: float = 0.
     ):
         if ch_cand is None:
             ch_cand = [list(range(self.m)) for _ in range(self.cost.h)]
@@ -87,7 +83,7 @@ class Designer:
             else:
                 Bs = [self.B[k][:, schedule_k] for k, schedule_k in enumerate(schedule)]
 
-            cost_best = self.cost.compute(self.A, Bs) if not check_rank else self.cost.compute_robust(self.A, Bs, eps)
+            cost_best = self.cost.compute(self.A, Bs)
 
         cand_times = [k for k in range(self.cost.h) if len(schedule[k]) < self.s]
         while len(cand_times) > 0:
@@ -103,34 +99,12 @@ class Designer:
                         cost_best = cost_cand
                         
             if cand_best is not None:
-                k, cand, col = cand_best[0], cand_best[1], np.reshape(cand_best[2], (self.n, -1))
+                k, cand, col = cand_best[0], cand_best[1], cand_best[2]
                 schedule[k].append(cand)
                 ch_cand[k].remove(cand)
-                Bs[k] = np.hstack([Bs[k], col]) if Bs[k].any() else col
+                Bs[k] = np.hstack([Bs[k], np.reshape(col, (self.n, -1))]) if Bs[k].any() else np.reshape(col, (self.n, -1))
                 if len(schedule[k]) == self.s:
                     cand_times.remove(k)
-                
-                if check_rank:
-                    im_col = np.reshape(np.matmul(A_vec[k], col), (self.n, -1))
-                    contr_mat = np.hstack([contr_mat, im_col]) if contr_mat is not None else im_col
-                    rank_contr_mat += 1
-                    print('rk true', np.linalg.matrix_rank(contr_mat))
-                    print('rk th', rank_contr_mat)
-                    if rank_contr_mat == self.n:
-                        break
-
-                    for j in cand_times:
-                        ch_cand_j_copy = deepcopy(ch_cand[j])
-                        B_j = self.B if isinstance(self.B, np.ndarray) else self.B[j]
-                        for cand_j in ch_cand_j_copy:
-                            AB = np.matmul(A_vec[j], np.reshape(B_j[:, cand_j], (self.n, -1))) if A_vec[j] is not None else np.reshape(B_j[:, cand_j], (self.n, -1))
-                            _, idx = independent_cols(
-                                AB,
-                                contr_mat,
-                                B_indep=True
-                            )
-                            if not len(idx):
-                                ch_cand[j].remove(cand_j)
 
             else:
                 break
@@ -144,7 +118,6 @@ class Designer:
         A_curr = np.eye(self.n)
         col_space_contr_mat = None
         rk_contr_mat = 0
-        ch_cand_all = [None] * self.cost.h
         ch_cand_dep = [None] * self.cost.h
         for k in range(self.cost.h):
 
@@ -195,7 +168,7 @@ class Designer:
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         col_space_contr_mat = None
         rk_contr_mat = 0
-        ch_cand = [None for _ in range(self.cost.h)]
+        ch_cand_dep = [None for _ in range(self.cost.h)]
 
         # pre-compute matrices applied to input channels
         A_all = [np.zeros(self.n)] * self.cost.h
@@ -212,42 +185,44 @@ class Designer:
 
             # iteration k optimizes the input channels applied at the k-th time step
             B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-            if k > 0 and rk_contr_mat < self.n:
-                                
-                # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
-                im_AB, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
+            if k > 0:
                 
-                # greedily select independent columns among found ones
+                # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)} but not ColSpace{A^(h-k-1)}
+                im_B, ch_cand_ctrl = left_kernel(A_all[k], B_curr, A_all[k-1])
+
+                # independent columns among found ones
                 # these are needed for controllability
-                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=A_all[k])
-                
-                # update column space of controllability matrix
-                col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
-                rk_contr_mat += len(schedule_k)
+                _, ch_cand_ctrl_ind = independent_cols(B_curr[:, ch_cand_ctrl])
+                schedule_k = ch_cand_ctrl_ind
 
             else:
+
+                # image of B through A^(h-k-1)
+                im_B = np.matmul(A_all[k], B_curr)
+                im_B[abs(im_B) < EPS] = 0
                 schedule_k = []
+
+            # greedy selection of remaining channels
+            if self.s > len(schedule_k):
+                ch_cand = list(set(range(self.m)) - set(schedule_k))
+                if rk_contr_mat < self.n:
+                    
+                    # priority to columns that increase rank of controllability matrix
+                    _, ch_cand_ind = independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
+                    schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ind, schedule_k, Bs, EPS, verbose)
+
+                    # update column space of controllability matrix
+                    col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
+                    rk_contr_mat += len(schedule_k)
+
+                # store remaining candidate columns, if budget not exhausted
+                if self.s > len(schedule_k):
+                    ch_cand_dep[k] = list(set(range(self.m)) - set(schedule_k))
 
             # store schedule
             schedule_best[k] = deepcopy(schedule_k)
 
-            # store remaining columns, if budget not exhausted
-            if self.s > len(schedule_k):
-                ch_cand[k] = list(set(range(self.m)) - set(schedule_k))
-
-        # greedily select independent columns till controllability Gramian has full rank
-        schedule_best, cost_best = self.greedy(
-            ch_cand,
-            schedule_best,
-            EPS,
-            check_rank=True,
-            contr_mat=col_space_contr_mat,
-            rank_contr_mat=rk_contr_mat,
-            A_vec=A_all
-        )
-
         # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
-        ch_cand_dep = [list(set(range(self.m)) - set(schedule_k)) for schedule_k in schedule_best]
         schedule_best, cost_best = self.greedy(ch_cand_dep, schedule_best)
         
         return schedule_best, cost_best
@@ -260,9 +235,7 @@ class Designer:
                 schedule_k: list[int],
                 Bs: list[np.ndarray],
                 eps: float = 0.,
-                verbose: bool = False,
-                check_rank : bool = False,
-                rank_mat: np.ndarray = None
+                verbose: bool = False
     ):
         if len(schedule_k):
             Bs[-1-k] = B_curr[:, schedule_k]
@@ -285,16 +258,6 @@ class Designer:
                 schedule_k.append(cand_best)
                 ch_cand.remove(cand_best)
                 Bs[-1-k] = B_curr[:, schedule_k]
-                if check_rank:
-                    ch_cand_copy = deepcopy(ch_cand)
-                    for cand in ch_cand_copy:
-                        _, idx = independent_cols(
-                            np.matmul(rank_mat, np.reshape(B_curr[:, cand], (-1, 1))),
-                            np.matmul(rank_mat, B_curr[:, schedule_k]),
-                            B_indep=True
-                        )
-                        if not len(idx):
-                            ch_cand.remove(cand)
 
             else:
                 break

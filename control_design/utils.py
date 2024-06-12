@@ -88,22 +88,23 @@ def independent_cols(A: np.ndarray,
         ), ind_col_idx
         
 
-def left_kernel(A_curr, B_curr, A_prod) -> tuple[np.ndarray, list[int]]:
+def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, list[int]]:
 
     # image of B through A^k
-    im_B = np.matmul(A_curr, B_curr)
-    im_B[abs(im_B) < EPS] = 0
-
-    # remove columns in ker{A^k}
-    im_B[:, list(np.where(~im_B.any(axis=0))[0])] = []
-
-    # image of A^k B through A^(k+1).T
-    im_AB = np.matmul(A_prod.T, im_B)
+    im_AB = np.matmul(A_k, B)
     im_AB[abs(im_AB) < EPS] = 0
 
-    # keep columns not in ker{A^(k+1).T}
-    ch_cand_ctrl = list(np.where(~im_AB.any(axis=0))[0])
-    return im_B, ch_cand_ctrl
+    # subspace of left kernel of A^(k+1) orthogonal to left kernel of A^k
+    K = np.matmul(
+        np.eye(len(A_prev)) - np.matmul(A_prev, np.linalg.pinv(A_prev)),
+        A_k
+    )
+    
+    # keep columns not orthogonal to K
+    im_K = np.matmul(K, im_AB)
+    im_K[abs(im_K) < EPS] = 0
+    ch_cand_ctrl = list(np.where(im_K.any(axis=0))[0])
+    return im_AB, ch_cand_ctrl
 
 
 def fxn():
