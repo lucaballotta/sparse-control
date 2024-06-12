@@ -146,48 +146,67 @@ class Designer:
         A_curr = np.eye(self.n)
         col_space_contr_mat = None
         rk_contr_mat = 0
-        ch_cand_all = [None] * self.cost.h
-        ch_cand_dep = [None] * self.cost.h
-        for k in range(self.cost.h):
+        ch_cand = [None for _ in range(self.cost.h)]
+        for k in range(self.cost.h - 1):
+            if rk_contr_mat < self.n:
 
-            # iteration k optimizes the input channels applied at the (h-k)-th time step
-            B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[-1-k]
-            A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-1-k]
-            A_prod = np.matmul(A_curr, A_prev)
-            
-            # columns of B s.t. ColSpace{A^k B_s} complements ColSpace{A^(k+1)} but not ColSpace{A^k}
-            im_B, ch_cand_ctrl = left_kernel(A_curr, B_curr, A_prod)
+                # iteration k optimizes the input channels applied at the (h-k)-th time step
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[-1-k]
+                A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-1-k]
+                A_prod = np.matmul(A_curr, A_prev)
+                
+                # columns of B s.t. ColSpace{A^k B_s} complements ColSpace{A^(k+1)} but not ColSpace{A^k}
+                im_AB, im_K, ch_cand_ker = left_kernel(A_curr, B_curr, A_prod)
 
-            # independent columns among found ones
-            # these are needed for controllability
-            _, ch_cand_ctrl_ind = independent_cols(B_curr[:, ch_cand_ctrl])
-            schedule_k = ch_cand_ctrl_ind
+                # greedily select independent columns among found ones
+                # these are needed for controllability
+                schedule_k = self.greedy_k(k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=im_K)
 
-            # greedy selection of remaining channels
-            if self.s > len(schedule_k):
-                ch_cand = list(set(range(self.m)) - set(schedule_k))
-                if rk_contr_mat < self.n:
-                    
-                    # priority to columns that increase rank of controllability matrix
-                    _, ch_cand_ind = independent_cols(im_B[:, ch_cand], col_space_contr_mat, B_indep=True)
-                    schedule_k = self.greedy_k(k, B_curr, ch_cand_ind, schedule_k, Bs, EPS, verbose)
+                # update column space of controllability matrix
+                col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
+                rk_contr_mat += len(schedule_k)
 
-                    # update column space of controllability matrix
-                    col_space_contr_mat = np.hstack([im_B[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_B[:, schedule_k]
-                    rk_contr_mat += len(schedule_k)
-
-                # store remaining candidate columns, if budget not exhausted
-                if self.s > len(schedule_k):
-                    ch_cand_dep[k] = list(set(range(self.m)) - set(schedule_k))
-
-            # store schedule
-            schedule_best[-1-k] = deepcopy(schedule_k)
+            else:
+                schedule_k = []
 
             # update open-loop dynamics for next input selection
             A_curr = A_prod
 
+            # store schedule
+            schedule_best[-1-k] = deepcopy(schedule_k)
+
+            # store remaining columns, if budget not exhausted
+            if self.s > len(schedule_k):
+                ch_cand[-1-k] = list(set(range(self.m)) - set(schedule_k))
+
+        # first input is unconstrained
+        schedule_best[0] = []
+        ch_cand[0] = list(range(self.m))
+        
+        # greedily select independent columns till controllability Gramian has full rank
+        # pre-compute matrices applied to input channels
+        A_all = [np.zeros(self.n)] * self.cost.h
+        A_all[-1] = np.eye(self.n)
+        A_curr = np.eye(self.n)
+        for k in range(1, self.cost.h):
+            A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-k]
+            A_curr = np.matmul(A_curr, A_prev)
+
+            # matrix for input at k-th time step stored at location k
+            A_all[-1-k] = deepcopy(A_curr)
+
+        schedule_best, cost_best = self.greedy(
+            ch_cand,
+            schedule_best,
+            EPS,
+            check_rank=True,
+            contr_mat=col_space_contr_mat,
+            rank_contr_mat=rk_contr_mat,
+            A_vec=A_all
+        )
+
         # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
-        schedule_best, cost_best = self.greedy(ch_cand_dep, schedule_best)
+        schedule_best, cost_best = self.greedy(ch_cand, schedule_best)
         
         return schedule_best, cost_best
 
@@ -210,11 +229,14 @@ class Designer:
             # matrix for input at k-th time step stored at location k
             A_all[-1-k] = deepcopy(A_curr)
 
-        for k in range(self.cost.h):
-
-            # iteration k optimizes the input channels applied at the k-th time step
-            B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-            if k > 0 and rk_contr_mat < self.n:
+        # first input is unconstrained
+        schedule_best[0] = []
+        ch_cand[0] = list(range(self.m))
+        for k in range(1, self.cost.h):
+            if rk_contr_mat < self.n:
+                
+                # iteration k optimizes the input channels applied at the k-th time step
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                                 
                 # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
                 im_AB, im_K, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])

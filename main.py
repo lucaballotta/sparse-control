@@ -25,11 +25,11 @@ cost_all_last = cost_func.compute(A, B_all_last)
 print(f'cost all actuator active at last time step: {cost_all_last} \n')
 
 # forward greedy
-algo = 'greedy-f'
+algo = 'greedy-b'
 designer = Designer(A, B, sparsity, cost_func, algo)
 schedule, cost = designer.design()
 
-print('forward greedy:')
+print('back greedy:')
 print('input schedule:', schedule)
 print(f'cost: {cost} \n')
 
@@ -37,7 +37,7 @@ print(f'cost: {cost} \n')
 designer.set_algo('mcmc')
 schedule, cost = designer.design(schedule=schedule)
 
-print('forward greedy + MCMC:')
+print('back greedy + MCMC:')
 print('input schedule:', schedule)
 print(f'cost: {cost} \n')
 

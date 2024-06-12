@@ -88,7 +88,7 @@ def independent_cols(A: np.ndarray,
         ), ind_col_idx
         
 
-def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, list[int]]:
+def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, np.ndarray, list[int]]:
 
     # image of B through A^k
     im_AB = np.matmul(A_k, B)
