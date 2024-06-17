@@ -96,7 +96,7 @@ class Designer:
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 for cand in ch_cand[k]:
                     Bs_cand = deepcopy(Bs)
-                    Bs_cand[k] = np.hstack([Bs[k], np.reshape(B_curr[:, cand], (self.n, -1))]) if Bs[k].any() else np.reshape(B_curr[:, cand], (self.n, -1))
+                    Bs_cand[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                     cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
                     if cost_cand < cost_best:
                         cand_best = (k, cand, B_curr[:, cand])
@@ -133,10 +133,9 @@ class Designer:
             else:
                 break
 
-        if self.cost.get_gramian_rank() < self.n:
+        if self.cost.update_gramian(self.A, Bs) and self.cost.get_gramian_rank() < self.n:
             cost_best = np.inf
             
-
         return schedule, cost_best
     
 

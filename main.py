@@ -4,7 +4,7 @@ from control_design.control_design import Designer
 from control_design.cost_function import CostFunction
 
 # import model matrices A and B
-from examples.ex1 import *
+from examples.ex3 import *
 
 # sparsity constraint
 sparsity = max(len(A) - matrix_rank(A), 1)
@@ -19,25 +19,20 @@ cost_func = CostFunction(h, 'tr-inv')
 cost_fully_actuated = cost_func.compute(A, B)
 print(f'cost fully actuated: {cost_fully_actuated} \n')
 
-# all actuator active at last time step
-B_all_last = [np.zeros_like(B), B]
-cost_all_last = cost_func.compute(A, B_all_last)
-print(f'cost all actuator active at last time step: {cost_all_last} \n')
-
-# forward greedy
-algo = 'greedy-b'
+# s-sparse greedy
+algo = 'greedy-f'
 designer = Designer(A, B, sparsity, cost_func, algo)
 schedule, cost = designer.design()
 
-print('back greedy:')
+print('back s-sparse greedy:')
 print('input schedule:', schedule)
 print(f'cost: {cost} \n')
 
-# forward greedy + MCMC
+# s-sparse greedy + MCMC
 designer.set_algo('mcmc')
 schedule, cost = designer.design(schedule=schedule)
 
-print('back greedy + MCMC:')
+print('s-sparse greedy + MCMC:')
 print('input schedule:', schedule)
 print(f'cost: {cost} \n')
 

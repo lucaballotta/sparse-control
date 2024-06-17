@@ -101,7 +101,7 @@ def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, np.ndarray, list[int]]:
     )
     
     # keep columns not orthogonal to K
-    im_K = np.matmul(K, im_AB)
+    im_K = np.matmul(K.T, im_AB)
     im_K[abs(im_K) < EPS] = 0
     ch_ker = list(np.where(im_K.any(axis=0))[0])
     return im_AB, im_K, ch_ker
