@@ -82,9 +82,9 @@ class CostFunction:
                 scipy.linalg.solve(
                     self._W + eps * np.eye(len(self._W)),
                     np.eye(len(self._W)),
-                    lower = True,
-                    assume_a = 'pos',
-                    overwrite_b = True
+                    lower=True,
+                    assume_a='pos',
+                    overwrite_b=True
                 )
             )
 

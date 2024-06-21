@@ -90,11 +90,15 @@ class Designer:
             cost_best = self.cost.compute(self.A, Bs) if not check_rank else self.cost.compute_robust(self.A, Bs, eps)
 
         cand_times = [k for k in range(self.cost.h) if len(schedule[k]) < self.s]
+        it = 1
         while len(cand_times) > 0:
+            print(f'iteration {it} of first loop')
             cand_best = None
             for k in cand_times:
+                print(f'candidate time {k}')
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 for cand in ch_cand[k]:
+                    print(f'candidate {cand}')
                     Bs_cand = deepcopy(Bs)
                     Bs_cand[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                     cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
@@ -133,7 +137,10 @@ class Designer:
             else:
                 break
 
-        if self.cost.update_gramian(self.A, Bs) and self.cost.get_gramian_rank() < self.n:
+            it += 1
+        
+        self.cost.update_gramian(self.A, Bs)
+        if self.cost.get_gramian_rank() < self.n:
             cost_best = np.inf
             
         return schedule, cost_best
@@ -295,11 +302,12 @@ class Designer:
             cost_curr_best = np.inf
 
         Bs_cand = deepcopy(Bs)
+        iter = 1
         while len(schedule_k) < self.s:
             cand_best = None
             for cand in ch_cand:
                 Bs_cand[-1-k] = B_curr[:, [*schedule_k, cand]]
-                cost_cand = self.cost.compute(self.A, Bs_cand, eps)
+                cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
                 if cost_cand < cost_curr_best:
                     cand_best = cand
                     cost_curr_best = cost_cand
@@ -322,6 +330,8 @@ class Designer:
             else:
                 break
 
+            iter += 1
+
         if verbose:
             print(f'Cost at iter {k}:', truncate_float(cost_curr_best, PRINT_DIGITS))
 
@@ -337,9 +347,7 @@ class Designer:
              eps: float = 0.,
              check_rank: bool = False
     ) -> tuple[list[list[int]], float]:
-        random_schedule = False
         if schedule is None:
-            random_schedule = True
             schedule = [None] * self.cost.h
             for k in range(self.cost.h):
                 schedule[k] = sample(range(self.m), self.s)
@@ -350,7 +358,7 @@ class Designer:
 
         t = t_init
         all_col = self.cost.h * self.s
-        cost_best = self.cost.compute_robust(self.A, Bs, eps) if random_schedule else self.cost.compute(self.A, Bs)
+        cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
             rank = self.cost.get_gramian_rank()
             A_all = [np.zeros(self.n)] * self.cost.h
@@ -401,6 +409,7 @@ class Designer:
 
                         except ValueError:
                             drop_rank = True
+                            Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
                             break
 
                     if drop_rank:
@@ -421,6 +430,10 @@ class Designer:
                     Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
 
             t *= a
+
+        self.cost.update_gramian(self.A, Bs)
+        if self.cost.get_gramian_rank() < self.n:
+            cost_best = np.inf
 
         return schedule, cost_best
     

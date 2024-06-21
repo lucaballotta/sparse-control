@@ -4,10 +4,12 @@ from control_design.control_design import Designer
 from control_design.cost_function import CostFunction
 
 # import model matrices A and B
-from examples.ex3 import *
+from examples.ex5 import *
 
 # sparsity constraint
 sparsity = max(len(A) - matrix_rank(A), 1)
+print('\n')
+print(f'sparsity: {sparsity}')
 
 # time horizon
 h = len(A)
@@ -22,31 +24,39 @@ print(f'cost fully actuated: {cost_fully_actuated} \n')
 # s-sparse greedy
 algo = 'greedy-f'
 designer = Designer(A, B, sparsity, cost_func, algo)
-schedule, cost = designer.design()
+schedule_s_greedy, cost_s_greedy = designer.design()
 
-print('back s-sparse greedy:')
-print('input schedule:', schedule)
-print(f'cost: {cost} \n')
+print('s-sparse greedy:')
+print('input schedule:', schedule_s_greedy)
+print(f'cost: {cost_s_greedy} \n')
 
 # s-sparse greedy + MCMC
 designer.set_algo('mcmc')
-schedule, cost = designer.design(schedule=schedule)
+schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=schedule_s_greedy)
 
 print('s-sparse greedy + MCMC:')
-print('input schedule:', schedule)
-print(f'cost: {cost} \n')
-
-# MCMC
-schedule, cost = designer.design(eps=1e-10, check_rank=True)
-
-print('MCMC:')
-print('input schedule:', schedule)
-print(f'cost: {cost} \n')
+print('input schedule:', schedule_s_greedy_mcmc)
+print(f'cost: {cost_s_greedy_mcmc} \n')
 
 # naive greedy
 designer.set_algo('greedy')
-schedule, cost = designer.design(eps=1e-10)
+schedule_greedy, cost_greedy = designer.design(eps=1e-10)
 
 print('greedy:')
-print('input schedule:', schedule)
-print(f'cost: {cost}')
+print('input schedule:', schedule_greedy)
+print(f'cost: {cost_greedy} \n')
+
+# naive greedy + MCMC
+designer.set_algo('mcmc')
+schedule_greedy_mcmc, cost_greedy_mcmc = designer.design(schedule=schedule_greedy)
+
+print('greedy + MCMC:')
+print('input schedule:', schedule_greedy_mcmc)
+print(f'cost: {cost_greedy_mcmc} \n')
+
+# naive greedy + MCMC checking rank
+schedule_greedy_mcmc_rk, cost_greedy_mcmc_rk = designer.design(schedule=schedule_greedy, check_rank=True)
+
+print('greedy + MCMC with rank check:')
+print('input schedule:', schedule_greedy_mcmc_rk)
+print(f'cost: {cost_greedy_mcmc_rk}')
