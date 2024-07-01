@@ -92,22 +92,22 @@ class Designer:
         cand_times = [k for k in range(self.cost.h) if len(schedule[k]) < self.s]
         it = 1
         while len(cand_times) > 0:
-            print(f'iteration {it} of first loop')
+            # print(f'iteration {it} of first loop')
             cand_best = None
             for k in cand_times:
-                print(f'candidate time {k}')
+                # print(f'candidate time {k}')
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 for cand in ch_cand[k]:
-                    print(f'candidate {cand}')
+                    # print(f'candidate {cand}')
                     Bs_cand = deepcopy(Bs)
                     Bs_cand[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                     cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
                     if cost_cand < cost_best:
-                        cand_best = (k, cand, B_curr[:, cand])
+                        cand_best = (k, cand, B_curr[:, [cand]])
                         cost_best = cost_cand
                         
             if cand_best is not None:
-                k, cand, col = cand_best[0], cand_best[1], np.reshape(cand_best[2], (self.n, -1))
+                k, cand, col = cand_best[0], cand_best[1], cand_best[2]
                 schedule[k].append(cand)
                 ch_cand[k].remove(cand)
                 Bs[k] = np.hstack([Bs[k], col]) if Bs[k].any() else col
@@ -135,7 +135,16 @@ class Designer:
                                 ch_cand[j].remove(cand_j)
 
             else:
-                break
+
+                # choose randomly
+                k = sample(cand_times, 1)[0]
+                cand = sample(ch_cand[k])[0]
+                schedule[k].append(cand)
+                ch_cand[k].remove(cand)
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
+                Bs[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
+                if len(schedule[k]) == self.s:
+                    cand_times.remove(k)
 
             it += 1
         
