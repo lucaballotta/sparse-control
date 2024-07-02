@@ -378,7 +378,8 @@ class Designer:
             Bs[k] = deepcopy(self.B[:, schedule[k]]) if isinstance(self.B, np.ndarray) else deepcopy(self.B[k][:, schedule[k]])
 
         t = t_init
-        all_col = self.cost.h * self.s
+        all_col = [[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]
+        # all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
             rank = self.cost.get_contr_mat_rank()
@@ -394,17 +395,19 @@ class Designer:
             for _ in range(it_max):
 
                 # select column in current schedule uniformly at random
-                col = sample(range(all_col), 1)[0]
-                k = col // self.s
-                pos_k = col % self.s
+                col = sample(all_col, 1)[0]
+                k, ch_k = col[0], col[1]
+                # col = sample(range(all_col), 1)[0]
+                # k = col // self.s
+                # pos_k = col % self.s
 
                 # sample candidate column for same time step                    
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-                cand_k = list(set(range(self.m)) - set(schedule[k]))
+                cand_k = list(set(range(self.m)) - set(ch_k))
                 cand = sample(cand_k, 1)[0]
                 if check_rank:
-                    _, ch_ker, _ = left_kernel(A_all[k], B_curr, A_all[k-1])
-                    if pos_k in ch_ker:
+                    _, _, ch_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
+                    if ch_k in ch_ker:
                         span_kernel = True
                         while cand not in ch_ker:
                             cand_k.remove(cand)
@@ -416,21 +419,27 @@ class Designer:
 
                         if not span_kernel:
                             continue
-
-                Bs[k][:, pos_k] = B_curr[:, cand]
+                
+                cand_sch = deepcopy(schedule[k])
+                cand_sch.remove(ch_k)
+                cand_sch.append(cand_k)
+                Bs[k] = B_curr[:, cand_sch]
+                # Bs[k][:, pos_k] = B_curr[:, cand]
                 if check_rank:
                     self.cost.update_gramian(self.A, Bs)
                     drop_rank = False
                     while rank > self.cost.get_contr_mat_rank():
                         cand_k.remove(cand)
+                        cand_sch.remove(cand)
                         try:
                             cand = sample(cand_k, 1)[0]
-                            Bs[k][:, pos_k] = B_curr[:, cand]
+                            cand_sch.append(cand_k)
+                            Bs[k] = B_curr[:, cand_sch]
                             self.cost.update_gramian(self.A, Bs)
 
                         except ValueError:
                             drop_rank = True
-                            Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
+                            Bs[k] = B_curr[:, schedule[k]]
                             break
 
                     if drop_rank:
@@ -440,7 +449,7 @@ class Designer:
 
                 # select candidate column according to MCMC rule
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
-                    schedule[k][pos_k] = cand
+                    schedule[k] = deepcopy(cand_sch)
                     cost_best = cost_curr
                     if check_rank and rank < self.cost.get_contr_mat_rank():
                         rank = self.cost.get_contr_mat_rank()
@@ -448,7 +457,8 @@ class Designer:
                 else:
 
                     # reset tested scheduled column in input matrix
-                    Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
+                    Bs[k] = B_curr[:, schedule[k]]
+                    # Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
 
             t *= a
 
