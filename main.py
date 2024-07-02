@@ -93,6 +93,7 @@ if save_vars:
             'cost': cost,
             'cost_fully_actuated': cost_fully_actuated,
             's_greedy': (schedule_s_greedy, cost_s_greedy),
+            's_greedy_mcmc': (schedule_s_greedy_mcmc, cost_s_greedy_mcmc),
             'greedy': (schedule_greedy, cost_greedy),
             'greedy_mcmc': (schedule_greedy_mcmc, cost_greedy_mcmc),
             'greedy_mcmc_rk': (schedule_greedy_mcmc_rk, cost_greedy_mcmc_rk)
