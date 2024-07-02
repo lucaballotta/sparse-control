@@ -373,12 +373,12 @@ class Designer:
             for k in range(self.cost.h):
                 schedule[k] = sample(range(self.m), self.s)
 
-        Bs = [None] * self.cost.h
-        for k in range(self.cost.h):
+        Bs = [None] * len(schedule)
+        for k in range(len(schedule)):
             Bs[k] = deepcopy(self.B[:, schedule[k]]) if isinstance(self.B, np.ndarray) else deepcopy(self.B[k][:, schedule[k]])
 
         t = t_init
-        all_col = [[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]
+        all_col = np.vstack([[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]).tolist()
         # all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
@@ -395,7 +395,7 @@ class Designer:
             for _ in range(it_max):
 
                 # select column in current schedule uniformly at random
-                col = sample(all_col, 1)[0]
+                col = all_col[sample(range(len(all_col)), 1)[0]]
                 k, ch_k = col[0], col[1]
                 # col = sample(range(all_col), 1)[0]
                 # k = col // self.s
@@ -403,7 +403,7 @@ class Designer:
 
                 # sample candidate column for same time step                    
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-                cand_k = list(set(range(self.m)) - set(ch_k))
+                cand_k = list(set(range(self.m)) - set(schedule[k]))
                 cand = sample(cand_k, 1)[0]
                 if check_rank:
                     _, _, ch_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
@@ -422,7 +422,7 @@ class Designer:
                 
                 cand_sch = deepcopy(schedule[k])
                 cand_sch.remove(ch_k)
-                cand_sch.append(cand_k)
+                cand_sch.append(cand)
                 Bs[k] = B_curr[:, cand_sch]
                 # Bs[k][:, pos_k] = B_curr[:, cand]
                 if check_rank:
@@ -433,7 +433,7 @@ class Designer:
                         cand_sch.remove(cand)
                         try:
                             cand = sample(cand_k, 1)[0]
-                            cand_sch.append(cand_k)
+                            cand_sch.append(cand)
                             Bs[k] = B_curr[:, cand_sch]
                             self.cost.update_gramian(self.A, Bs)
 
@@ -453,6 +453,9 @@ class Designer:
                     cost_best = cost_curr
                     if check_rank and rank < self.cost.get_contr_mat_rank():
                         rank = self.cost.get_contr_mat_rank()
+
+                    all_col.remove(col)
+                    all_col.append([k, cand])
                 
                 else:
 
