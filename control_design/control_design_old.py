@@ -15,11 +15,11 @@ class Designer:
     ALGORITHMS = {'greedy', 'greedy-b', 'greedy-f', 'mcmc', 'relax'}
 
     def __init__(self, 
-                 A: Union[list[np.ndarray], np.ndarray],
-                 B: Union[list[np.ndarray], np.ndarray],
+                 A: Union[List[np.ndarray], np.ndarray],
+                 B: Union[List[np.ndarray], np.ndarray],
                  sparsity: int,
-                 cost: CostFunction = 'tr-inv',
-                 algo: str = 'greedy',
+                 cost: CostFunction,
+                 algo: str,
     ) -> None:
         self.A = A
         self.n = len(self.A) if isinstance(self.A, np.ndarray) else len(self.A[0])
@@ -51,7 +51,7 @@ class Designer:
         self.algo = algo
 
 
-    def design(self, *args, **kwargs) -> tuple[list[int], float]:
+    def design(self, *args, **kwargs) -> Tuple[List[List[int]], float]:
         if self.algo == 'greedy':
             return self.greedy(*args, **kwargs)
         if self.algo == 'greedy-b':
@@ -65,10 +65,10 @@ class Designer:
     
 
     def greedy(self, 
-               ch_cand: list[list[int]] = None,
-               schedule: list[list[int]] = None, 
+               ch_cand: List[List[int]] = None,
+               schedule: List[List[int]] = None, 
                eps: float = 0.
-    ):
+    ) -> Tuple[List[List[int]], float]:
         if ch_cand is None:
             ch_cand = [list(range(self.m)) for _ in range(self.cost.h)]
 
@@ -112,7 +112,7 @@ class Designer:
         return schedule, cost_best
     
 
-    def greedy_backwards(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_backwards(self, verbose: bool = False) -> Tuple[List[List[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         A_curr = np.eye(self.n)
@@ -163,7 +163,7 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greedy_forward(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_forward(self, verbose: bool = False) -> Tuple[List[List[int]], float]:
         schedule_best = [None for _ in range(self.cost.h)]
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         col_space_contr_mat = None
@@ -236,7 +236,7 @@ class Designer:
                 Bs: list[np.ndarray],
                 eps: float = 0.,
                 verbose: bool = False
-    ):
+    ) -> List[int]:
         if len(schedule_k):
             Bs[-1-k] = B_curr[:, schedule_k]
             cost_curr_best = self.cost.compute(self.A, Bs)
@@ -276,7 +276,7 @@ class Designer:
              schedule: list[list[int]] = None,
              eps: float = 0.,
              check_rank: bool = False
-    ) -> tuple[list[list[int]], float]:
+    ) -> Tuple[List[List[int]], float]:
         random_schedule = False
         if schedule is None:
             random_schedule = True
@@ -292,7 +292,7 @@ class Designer:
         all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps) if random_schedule else self.cost.compute(self.A, Bs)
         if check_rank:
-            rank = self.cost.get_gramian_rank()
+            rank = self.cost.get_contr_mat_rank()
             A_all = [np.zeros(self.n)] * self.cost.h
             A_all[-1] = np.eye(self.n)
             A_curr = np.eye(self.n)
@@ -333,7 +333,7 @@ class Designer:
                 if check_rank:
                     self.cost.update_gramian(self.A, Bs)
                     drop_rank = False
-                    while rank > self.cost.get_gramian_rank():
+                    while rank > self.cost.get_contr_mat_rank():
                         cand_k.remove(cand)
                         try:
                             cand = sample(cand_k, 1)[0]
@@ -353,8 +353,8 @@ class Designer:
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
                     schedule[k][pos_k] = cand
                     cost_best = cost_curr
-                    if check_rank and rank < self.cost.get_gramian_rank():
-                        rank = self.cost.get_gramian_rank()
+                    if check_rank and rank < self.cost.get_contr_mat_rank():
+                        rank = self.cost.get_contr_mat_rank()
                 
                 else:
 

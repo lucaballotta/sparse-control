@@ -1,7 +1,6 @@
 import datetime
 import os.path
 import pickle
-from networkx import is_empty
 from numpy.linalg import matrix_rank
 
 from control_design.control_design import Designer

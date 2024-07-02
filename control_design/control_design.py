@@ -15,8 +15,8 @@ class Designer:
     ALGORITHMS = {'greedy', 'greedy-b', 'greedy-f', 'mcmc', 'relax'}
 
     def __init__(self, 
-                 A: Union[list[np.ndarray], np.ndarray],
-                 B: Union[list[np.ndarray], np.ndarray],
+                 A: Union[List[np.ndarray], np.ndarray],
+                 B: Union[List[np.ndarray], np.ndarray],
                  sparsity: int,
                  cost: CostFunction = 'tr-inv',
                  algo: str = 'greedy',
@@ -51,7 +51,7 @@ class Designer:
         self.algo = algo
 
 
-    def design(self, *args, **kwargs) -> tuple[list[int], float]:
+    def design(self, *args, **kwargs) -> Tuple[List[List[int]], float]:
         if self.algo == 'greedy':
             return self.greedy(*args, **kwargs)
         if self.algo == 'greedy-b':
@@ -65,14 +65,14 @@ class Designer:
     
 
     def greedy(self, 
-               ch_cand: list[list[int]] = None,
-               schedule: list[list[int]] = None, 
+               ch_cand: List[List[int]] = None,
+               schedule: List[List[int]] = None, 
                eps: float = 0.,
                check_rank: bool = False,
                contr_mat: np.ndarray = None,
                rank_contr_mat: int = None,
-               A_vec: list[np.ndarray] = None
-    ):
+               A_vec: List[np.ndarray] = None
+    ) -> Tuple[List[List[int]], float]:
         if ch_cand is None:
             ch_cand = [list(range(self.m)) for _ in range(self.cost.h)]
 
@@ -87,18 +87,27 @@ class Designer:
             else:
                 Bs = [self.B[k][:, schedule_k] for k, schedule_k in enumerate(schedule)]
 
-            cost_best = self.cost.compute(self.A, Bs) if not check_rank else self.cost.compute_robust(self.A, Bs, eps)
+            cost_best = self.cost.compute(self.A, Bs) if not check_rank else np.inf
 
         cand_times = [k for k in range(self.cost.h) if len(schedule[k]) < self.s]
+        if check_rank:
+            for j in cand_times:
+                ch_cand_j_copy = deepcopy(ch_cand[j])
+                B_j = self.B if isinstance(self.B, np.ndarray) else self.B[j]
+                for cand_j in ch_cand_j_copy:
+                    AB = np.matmul(A_vec[j], B_j[:, [cand_j]]) if A_vec[j] is not None else B_j[:, [cand_j]]
+                    _, idx = independent_cols(AB, contr_mat, B_indep=True)
+                    if not len(idx):
+                        ch_cand[j].remove(cand_j)
+
+            cand_times = [j for j in cand_times if len(ch_cand[j])]
+
         it = 1
         while len(cand_times) > 0:
-            # print(f'iteration {it} of first loop')
             cand_best = None
             for k in cand_times:
-                # print(f'candidate time {k}')
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 for cand in ch_cand[k]:
-                    # print(f'candidate {cand}')
                     Bs_cand = deepcopy(Bs)
                     Bs_cand[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                     cost_cand = self.cost.compute_robust(self.A, Bs_cand, eps)
@@ -125,37 +134,36 @@ class Designer:
                         ch_cand_j_copy = deepcopy(ch_cand[j])
                         B_j = self.B if isinstance(self.B, np.ndarray) else self.B[j]
                         for cand_j in ch_cand_j_copy:
-                            AB = np.matmul(A_vec[j], np.reshape(B_j[:, cand_j], (self.n, -1))) if A_vec[j] is not None else np.reshape(B_j[:, cand_j], (self.n, -1))
-                            _, idx = independent_cols(
-                                AB,
-                                contr_mat,
-                                B_indep=True
-                            )
+                            AB = np.matmul(A_vec[j], B_j[:, [cand_j]]) if A_vec[j] is not None else B_j[:, [cand_j]]
+                            _, idx = independent_cols(AB, contr_mat, B_indep=True)
                             if not len(idx):
                                 ch_cand[j].remove(cand_j)
 
-            else:
+                    cand_times = [j for j in cand_times if len(ch_cand[j])]
+                    cost_best = np.inf
 
+            else:
+                break
                 # choose randomly
-                k = sample(cand_times, 1)[0]
-                cand = sample(ch_cand[k])[0]
+                '''k = sample(cand_times, 1)[0]
+                cand = sample(ch_cand[k], 1)[0]
                 schedule[k].append(cand)
                 ch_cand[k].remove(cand)
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 Bs[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                 if len(schedule[k]) == self.s:
-                    cand_times.remove(k)
+                    cand_times.remove(k)'''
 
             it += 1
         
         self.cost.update_gramian(self.A, Bs)
-        if self.cost.get_gramian_rank() < self.n:
+        if self.cost.get_contr_mat_rank() < self.n:
             cost_best = np.inf
             
         return schedule, cost_best
     
 
-    def greedy_backwards(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_backwards(self, verbose: bool = False) -> Tuple[List[List[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         A_curr = np.eye(self.n)
@@ -226,7 +234,7 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greedy_forward(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_forward(self, verbose: bool = False) -> Tuple[List[List[int]], float]:
         schedule_best = [None for _ in range(self.cost.h)]
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         col_space_contr_mat = None
@@ -284,6 +292,10 @@ class Designer:
             rank_contr_mat=rk_contr_mat,
             A_vec=A_all
         )
+        if cost_best == np.inf:
+            raise Warning('System is uncontrollable after rank-aware channel selection')
+        else:
+            print('System is controllable, improving cost')
 
         # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
         ch_cand_dep = [list(set(range(self.m)) - set(schedule_k)) for schedule_k in schedule_best]
@@ -295,14 +307,14 @@ class Designer:
     def greedy_k(self,
                 k: int,
                 B_curr: np.ndarray,
-                ch_cand: list[int],
-                schedule_k: list[int],
-                Bs: list[np.ndarray],
+                ch_cand: List[int],
+                schedule_k: List[int],
+                Bs: List[np.ndarray],
                 eps: float = 0.,
                 verbose: bool = False,
                 check_rank : bool = False,
                 rank_mat: np.ndarray = None
-    ):
+    ) -> List[int]:
         if len(schedule_k):
             Bs[-1-k] = B_curr[:, schedule_k]
             cost_curr_best = self.cost.compute(self.A, Bs)
@@ -352,10 +364,10 @@ class Designer:
              t_min: float = 1e-7,
              a: float = .1,
              it_max: int = 5000,
-             schedule: list[list[int]] = None,
+             schedule: List[List[int]] = None,
              eps: float = 0.,
              check_rank: bool = False
-    ) -> tuple[list[list[int]], float]:
+    ) -> Tuple[List[List[int]], float]:
         if schedule is None:
             schedule = [None] * self.cost.h
             for k in range(self.cost.h):
@@ -369,7 +381,7 @@ class Designer:
         all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
-            rank = self.cost.get_gramian_rank()
+            rank = self.cost.get_contr_mat_rank()
             A_all = [np.zeros(self.n)] * self.cost.h
             A_all[-1] = np.eye(self.n)
             A_curr = np.eye(self.n)
@@ -409,7 +421,7 @@ class Designer:
                 if check_rank:
                     self.cost.update_gramian(self.A, Bs)
                     drop_rank = False
-                    while rank > self.cost.get_gramian_rank():
+                    while rank > self.cost.get_contr_mat_rank():
                         cand_k.remove(cand)
                         try:
                             cand = sample(cand_k, 1)[0]
@@ -430,8 +442,8 @@ class Designer:
                 if cost_curr < cost_best or random() < np.exp(-(cost_curr - cost_best) / t):
                     schedule[k][pos_k] = cand
                     cost_best = cost_curr
-                    if check_rank and rank < self.cost.get_gramian_rank():
-                        rank = self.cost.get_gramian_rank()
+                    if check_rank and rank < self.cost.get_contr_mat_rank():
+                        rank = self.cost.get_contr_mat_rank()
                 
                 else:
 
@@ -441,7 +453,7 @@ class Designer:
             t *= a
 
         self.cost.update_gramian(self.A, Bs)
-        if self.cost.get_gramian_rank() < self.n:
+        if self.cost.get_contr_mat_rank() < self.n:
             cost_best = np.inf
 
         return schedule, cost_best

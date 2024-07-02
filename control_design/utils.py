@@ -2,6 +2,7 @@ import warnings
 import numpy as np
 
 from scipy.linalg import qr
+from typing import *
 
 EPS = 1e-10
 
@@ -10,7 +11,7 @@ def truncate_float (float_number, decimal_places):
     return int(float_number * multiplier) / multiplier
 
 
-def staircase(R: np.ndarray, tol: float = EPS) -> list[int]:
+def staircase(R: np.ndarray, tol: float = EPS) -> List[int]:
     '''
     Finds indices of linearly independent columns from QR decomposition
     
@@ -41,7 +42,7 @@ def staircase(R: np.ndarray, tol: float = EPS) -> list[int]:
 def independent_cols(A: np.ndarray,
                      B: np.ndarray = None,
                      B_indep: bool = False
-    ) -> tuple[np.ndarray, list[int]]:
+    ) -> Tuple[np.ndarray, List[int]]:
     '''
     Find linearly independent columns of given matrices.
     If B (resp., A) is None, linearly independent columns of A (resp., B) are returned.
@@ -88,7 +89,7 @@ def independent_cols(A: np.ndarray,
         ), ind_col_idx
         
 
-def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, np.ndarray, list[int]]:
+def left_kernel(A_k, B, A_prev) -> Tuple[np.ndarray, np.ndarray, List[int]]:
 
     # image of B through A^k
     im_AB = np.matmul(A_k, B)
@@ -100,12 +101,12 @@ def left_kernel(A_k, B, A_prev) -> tuple[np.ndarray, np.ndarray, list[int]]:
         A_k
     )
     
-    # keep columns not orthogonal to K
+    # keep columns B_j of B s.t. A^k B_j is not orthogonal to K
     im_K = np.matmul(K.T, im_AB)
     im_K[abs(im_K) < EPS] = 0
     ch_ker = list(np.where(im_K.any(axis=0))[0])
     return im_AB, im_K, ch_ker
 
 
-def fxn():
+def fxn() -> None:
     warnings.warn("deprecated", DeprecationWarning)

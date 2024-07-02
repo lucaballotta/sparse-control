@@ -25,17 +25,17 @@ class CostFunction:
         self._W = None
             
         
-    def get_gramian(self):
+    def get_gramian(self) -> np.ndarray:
         return self._W
     
 
-    def get_gramian_rank(self):
-        return np.linalg.matrix_rank(self._W)
+    def get_contr_mat_rank(self) -> float:
+        return np.linalg.matrix_rank(self._contr_mat)
     
 
     def compute(self,
-                A: Union[np.ndarray, list[np.ndarray]],
-                B: Union[np.ndarray, list[np.ndarray]],
+                A: Union[np.ndarray, List[np.ndarray]],
+                B: Union[np.ndarray, List[np.ndarray]],
                 eps: float = 0.
     ) -> float:
         self.update_gramian(A, B)
@@ -50,8 +50,8 @@ class CostFunction:
         
 
     def compute_robust(self,
-                       A: Union[np.ndarray, list[np.ndarray]],
-                       B: Union[np.ndarray, list[np.ndarray]],
+                       A: Union[np.ndarray, List[np.ndarray]],
+                       B: Union[np.ndarray, List[np.ndarray]],
                        eps: float = 0.
     ) -> float:
         done = False
@@ -95,8 +95,8 @@ class CostFunction:
     
 
     def update_gramian(self,
-                A: Union[np.ndarray, list[np.ndarray]],
-                B: Union[np.ndarray, list[np.ndarray]],
+                A: Union[np.ndarray, List[np.ndarray]],
+                B: Union[np.ndarray, List[np.ndarray]],
                 h: int = None
     ) -> np.ndarray:
         if h is None:
