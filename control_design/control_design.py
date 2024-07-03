@@ -19,7 +19,7 @@ class Designer:
                  B: Union[List[np.ndarray], np.ndarray],
                  sparsity: int,
                  cost: CostFunction = 'tr-inv',
-                 algo: str = 'greedy',
+                 algo: str = 'greedy-f',
     ) -> None:
         self.A = A
         self.n = len(self.A) if isinstance(self.A, np.ndarray) else len(self.A[0])
@@ -256,11 +256,11 @@ class Designer:
         schedule_best[0] = []
         ch_cand[0] = list(range(self.m))
         for k in range(1, self.cost.h):
-            if rk_contr_mat < self.n:
+            if rk_contr_mat < self.n and np.linalg.matrix_rank(A_all[k-1]) < self.n:
                 
                 # iteration k optimizes the input channels applied at the k-th time step
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-                                
+
                 # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
                 im_AB, im_K, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
 

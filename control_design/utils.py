@@ -100,7 +100,8 @@ def left_kernel(A_k, B, A_prev) -> Tuple[np.ndarray, np.ndarray, List[int]]:
         np.eye(len(A_prev)) - np.matmul(A_prev, np.linalg.pinv(A_prev)),
         A_k
     )
-    
+    K[abs(K) < EPS] = 0
+
     # keep columns B_j of B s.t. A^k B_j is not orthogonal to K
     im_K = np.matmul(K.T, im_AB)
     im_K[abs(im_K) < EPS] = 0
