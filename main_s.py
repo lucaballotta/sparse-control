@@ -1,4 +1,3 @@
-from curses import has_key
 import datetime
 import os.path
 import pickle
@@ -26,25 +25,25 @@ if not load_exp:
 
     sparsity = max(len(A) - matrix_rank(A), 1)
     h = len(A)
-    cost = 'tr-inv'
+    cost = 'logdet'
 
 else:
-    file_name = 'ex5_202407020602'
+    file_name = 'ex5_s_logdet_202407040140'
     with open('exp/' + file_name + '.pickle', 'rb') as f:
         vars = pickle.load(f) # type: dict
     
     A = vars['A'] # type: np.ndarray
     B = vars['B'] # type: np.ndarray
     h = len(A)
-    cost = vars['cost'] # type: str
+    cost = 'logdet'
     sparsity = vars['s'] # type: int
 
 # sparsity constraints
 s_init = sparsity
 s_step = 2
 s_max = min(s_init + 10, len(B[0]) - s_step)
-if load_exp:
-    s_init += s_step
+# if load_exp:
+#     s_init += s_step
 
 s_vec = range(s_init, s_max, s_step)
 
@@ -54,28 +53,28 @@ cost_s_greedy_all = dict.fromkeys(s_vec)
 schedule_s_greedy_mcmc_all = dict.fromkeys(s_vec)
 cost_s_greedy_mcmc_all = dict.fromkeys(s_vec)
 
-if load_exp:
-    schedule_s_greedy_all[sparsity] = vars['s_greedy'][0]
-    cost_s_greedy_all[sparsity] = vars['s_greedy'][1]
-    if 's_greedy_mcmc' in vars.keys():
-        schedule_s_greedy_mcmc_all[sparsity] = vars['s_greedy_mcmc'][0]
-        cost_s_greedy_mcmc_all[sparsity] = vars['s_greedy_mcmc'][1]
+# if load_exp:
+#     schedule_s_greedy_all[sparsity] = vars['s_greedy'][0]
+#     cost_s_greedy_all[sparsity] = vars['s_greedy'][1]
+#     if 's_greedy_mcmc' in vars:
+#         schedule_s_greedy_mcmc_all[sparsity] = vars['s_greedy_mcmc'][0]
+#         cost_s_greedy_mcmc_all[sparsity] = vars['s_greedy_mcmc'][1]
 
 # find sparsity schedules
 cost_func = CostFunction(h, cost)
 designer = Designer(A, B, sparsity, cost_func)
 
-if 's_greedy_mcmc' not in vars.keys():
+# if 's_greedy_mcmc' not in vars:
     
-    # s-sparse greedy + MCMC
-    print(f'sparsity: {sparsity} (MCMC)\n')
-    designer.set_algo('mcmc')
-    schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=schedule_s_greedy_all[sparsity])
-    schedule_s_greedy_mcmc_all[sparsity] = schedule_s_greedy_mcmc
-    cost_s_greedy_mcmc_all[sparsity] = cost_s_greedy_mcmc
+#     # s-sparse greedy + MCMC
+#     print(f'sparsity: {sparsity} (MCMC)\n')
+#     designer.set_algo('mcmc')
+#     schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=schedule_s_greedy_all[sparsity])
+#     schedule_s_greedy_mcmc_all[sparsity] = schedule_s_greedy_mcmc
+#     cost_s_greedy_mcmc_all[sparsity] = cost_s_greedy_mcmc
 
 for s in s_vec:
-    print(f'sparsity: {s}\n')
+    print(f'sparsity: {s} \n')
     designer.set_sparsity(s)
 
     # s-sparse greedy
@@ -84,19 +83,23 @@ for s in s_vec:
     schedule_s_greedy = [schedule_k for schedule_k in schedule_s_greedy if len(schedule_k) > 0]
     cost_s_greedy_all[s] = cost_s_greedy
     schedule_s_greedy_all[s] = schedule_s_greedy
+    print('s-sparse greedy:')
+    print(f'cost: {cost_s_greedy} \n')
 
     # s-sparse greedy + MCMC
     designer.set_algo('mcmc')
     schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=schedule_s_greedy)
     cost_s_greedy_mcmc_all[s] = cost_s_greedy_mcmc
     schedule_s_greedy_mcmc_all[s] = schedule_s_greedy_mcmc
+    print('s-sparse greedy + MCMC:')
+    print(f'cost: {cost_s_greedy_mcmc} \n')
 
 if save_result:
     dir_name = 'exp'
     if not os.path.isdir(dir_name):
         os.mkdir(dir_name)
 
-    file_name = file_name[:file_name.find('_')] + '_s_' + datetime.datetime.now().strftime('%Y%m%d%I%M')
+    file_name = file_name[:file_name.find('_')] + '_s_' + cost + '_' + datetime.datetime.now().strftime('%Y%m%d%I%M')
     with open(dir_name + '/' + file_name + '.pickle', 'wb') as file:
         pickle.dump({
             'A': A,

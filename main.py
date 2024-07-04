@@ -1,3 +1,4 @@
+from copy import deepcopy
 import datetime
 import os.path
 import pickle
@@ -7,7 +8,7 @@ from control_design.control_design import Designer
 from control_design.cost_function import CostFunction
 
 # import model matrices A and B
-exp_id = 5
+exp_id = 4
 if exp_id == 1:
     from examples.ex1 import *
 elif exp_id == 2:
@@ -49,7 +50,7 @@ print(f'cost: {cost_s_greedy} \n')
 
 # s-sparse greedy + MCMC
 designer.set_algo('mcmc')
-schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=schedule_s_greedy)
+schedule_s_greedy_mcmc, cost_s_greedy_mcmc = designer.design(schedule=deepcopy(schedule_s_greedy))
 
 print('s-sparse greedy + MCMC:')
 print('input schedule:', schedule_s_greedy_mcmc)
@@ -66,7 +67,7 @@ print(f'cost: {cost_greedy} \n')
 
 # naive greedy + MCMC
 designer.set_algo('mcmc')
-schedule_greedy_mcmc, cost_greedy_mcmc = designer.design(schedule=schedule_greedy)
+schedule_greedy_mcmc, cost_greedy_mcmc = designer.design(schedule=deepcopy(schedule_greedy))
 
 print('greedy + MCMC:')
 print('input schedule:', schedule_greedy_mcmc)

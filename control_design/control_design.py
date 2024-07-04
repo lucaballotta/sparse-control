@@ -1,3 +1,5 @@
+from tabnanny import check
+from traceback import print_tb
 import numpy as np
 
 from typing import *
@@ -42,6 +44,10 @@ class Designer:
             raise ValueError('InputError: sparsity value must be positive')
         
         self.s = sparsity
+
+
+    def set_cost(self, cost: CostFunction):
+        self.cost = cost
 
 
     def set_algo(self, algo: str):
@@ -103,6 +109,8 @@ class Designer:
             cand_times = [j for j in cand_times if len(ch_cand[j])]
 
         it = 1
+        counter_no_improve = 0
+        counter_no_improve_max = 0
         while len(cand_times) > 0:
             cand_best = None
             for k in cand_times:
@@ -116,6 +124,7 @@ class Designer:
                         cost_best = cost_cand
                         
             if cand_best is not None:
+                counter_no_improve = 0
                 k, cand, col = cand_best[0], cand_best[1], cand_best[2]
                 schedule[k].append(cand)
                 ch_cand[k].remove(cand)
@@ -143,16 +152,21 @@ class Designer:
                     cost_best = np.inf
 
             else:
-                break
+                print('attempt random selection')
+                if counter_no_improve == counter_no_improve_max:
+                    break
+
+                counter_no_improve += 1
+
                 # choose randomly
-                '''k = sample(cand_times, 1)[0]
+                k = sample(cand_times, 1)[0]
                 cand = sample(ch_cand[k], 1)[0]
                 schedule[k].append(cand)
                 ch_cand[k].remove(cand)
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
                 Bs[k] = np.hstack([Bs[k], B_curr[:, [cand]]]) if Bs[k].any() else B_curr[:, [cand]]
                 if len(schedule[k]) == self.s:
-                    cand_times.remove(k)'''
+                    cand_times.remove(k)
 
             it += 1
         
