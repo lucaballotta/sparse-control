@@ -1,8 +1,7 @@
-from tabnanny import check
-from traceback import print_tb
 import numpy as np
 
 from typing import *
+from types import NoneType
 from copy import deepcopy
 from random import random, sample
 
@@ -71,13 +70,13 @@ class Designer:
     
 
     def greedy(self, 
-               ch_cand: List[List[int]] = None,
-               schedule: List[List[int]] = None, 
+               ch_cand: Union[List[List[int]], NoneType] = None,
+               schedule: Union[List[List[int]], NoneType] = None, 
                eps: float = 0.,
                check_rank: bool = False,
-               contr_mat: np.ndarray = None,
+               contr_mat: Union[np.ndarray, NoneType] = None,
                rank_contr_mat: int = None,
-               A_vec: List[np.ndarray] = None
+               A_vec: Union[List[np.ndarray], NoneType] = None
     ) -> Tuple[List[List[int]], float]:
         if ch_cand is None:
             ch_cand = [list(range(self.m)) for _ in range(self.cost.h)]
@@ -378,7 +377,7 @@ class Designer:
              t_min: float = 1e-7,
              a: float = .1,
              it_max: int = 5000,
-             schedule: List[List[int]] = None,
+             schedule: Union[List[List[int]], NoneType] = None,
              eps: float = 0.,
              check_rank: bool = False
     ) -> Tuple[List[List[int]], float]:
@@ -393,7 +392,6 @@ class Designer:
 
         t = t_init
         all_col = np.vstack([[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]).tolist()
-        # all_col = self.cost.h * self.s
         cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
             rank = self.cost.get_contr_mat_rank()
@@ -411,9 +409,6 @@ class Designer:
                 # select column in current schedule uniformly at random
                 col = all_col[sample(range(len(all_col)), 1)[0]]
                 k, ch_k = col[0], col[1]
-                # col = sample(range(all_col), 1)[0]
-                # k = col // self.s
-                # pos_k = col % self.s
 
                 # sample candidate column for same time step                    
                 B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
@@ -438,7 +433,6 @@ class Designer:
                 cand_sch.remove(ch_k)
                 cand_sch.append(cand)
                 Bs[k] = B_curr[:, cand_sch]
-                # Bs[k][:, pos_k] = B_curr[:, cand]
                 if check_rank:
                     self.cost.update_gramian(self.A, Bs)
                     drop_rank = False
@@ -475,7 +469,6 @@ class Designer:
 
                     # reset tested scheduled column in input matrix
                     Bs[k] = B_curr[:, schedule[k]]
-                    # Bs[k][:, pos_k] = B_curr[:, schedule[k][pos_k]]
 
             t *= a
 
