@@ -121,12 +121,8 @@ class Designer:
                         ch_cand_j_copy = deepcopy(ch_cand[j])
                         B_j = self.B if isinstance(self.B, np.ndarray) else self.B[j]
                         for cand_j in ch_cand_j_copy:
-                            AB = np.matmul(A_vec[j], np.reshape(B_j[:, cand_j], (self.n, -1))) if A_vec[j] is not None else np.reshape(B_j[:, cand_j], (self.n, -1))
-                            _, idx = independent_cols(
-                                AB,
-                                contr_mat,
-                                B_indep=True
-                            )
+                            AB = np.matmul(A_vec[j], B_j[:, [cand_j]]) if A_vec[j] is not None else B_j[:, [cand_j]]
+                            _, idx = independent_cols(AB, contr_mat, B_indep=True)
                             if not len(idx):
                                 ch_cand[j].remove(cand_j)
 
@@ -140,7 +136,7 @@ class Designer:
         return schedule, cost_best
     
 
-    def greedy_backwards(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_backwards(self) -> tuple[list[list[int]], float]:
         schedule_best = [None] * self.cost.h
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         A_curr = np.eye(self.n)
@@ -160,7 +156,7 @@ class Designer:
 
                 # greedily select independent columns among found ones
                 # these are needed for controllability
-                schedule_k = self.greedy_k(k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=im_K)
+                schedule_k = self.greedy_k(k, B_curr, ch_cand_ker, Bs, EPS, im_K)
 
                 # update column space of controllability matrix
                 col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
@@ -211,7 +207,7 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greedy_forward(self, verbose: bool = False) -> tuple[list[list[int]], float]:
+    def greedy_forward(self) -> tuple[list[list[int]], float]:
         schedule_best = [None for _ in range(self.cost.h)]
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         col_space_contr_mat = None
@@ -243,7 +239,7 @@ class Designer:
 
                 # greedily select independent columns among found ones
                 # these are needed for controllability
-                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, [], Bs, EPS, verbose=verbose, check_rank=True, rank_mat=im_K)
+                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, Bs, EPS, im_K)
                 
                 # update column space of controllability matrix
                 col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
@@ -281,21 +277,13 @@ class Designer:
                 k: int,
                 B_curr: np.ndarray,
                 ch_cand: list[int],
-                schedule_k: list[int],
                 Bs: list[np.ndarray],
-                eps: float = 0.,
-                verbose: bool = False,
-                check_rank : bool = False,
-                rank_mat: np.ndarray = None
+                eps: float,
+                rank_mat: np.ndarray
     ):
-        if len(schedule_k):
-            Bs[-1-k] = B_curr[:, schedule_k]
-            cost_curr_best = self.cost.compute(self.A, Bs)
-
-        else:
-            cost_curr_best = np.inf
-
+        cost_curr_best = np.inf
         Bs_cand = deepcopy(Bs)
+        schedule_k = []
         while len(schedule_k) < self.s:
             cand_best = None
             for cand in ch_cand:
@@ -309,22 +297,18 @@ class Designer:
                 schedule_k.append(cand_best)
                 ch_cand.remove(cand_best)
                 Bs[-1-k] = B_curr[:, schedule_k]
-                if check_rank:
-                    ch_cand_copy = deepcopy(ch_cand)
-                    for cand in ch_cand_copy:
-                        _, idx = independent_cols(
-                            rank_mat[:, [cand]],
-                            rank_mat[:, schedule_k],
-                            B_indep=True
-                        )
-                        if not len(idx):
-                            ch_cand.remove(cand)
+                ch_cand_copy = deepcopy(ch_cand)
+                for cand in ch_cand_copy:
+                    _, idx = independent_cols(
+                        rank_mat[:, [cand]],
+                        rank_mat[:, schedule_k],
+                        B_indep=True
+                    )
+                    if not len(idx):
+                        ch_cand.remove(cand)
 
             else:
                 break
-
-        if verbose:
-            print(f'Cost at iter {k}:', truncate_float(cost_curr_best, PRINT_DIGITS))
 
         return schedule_k
     
