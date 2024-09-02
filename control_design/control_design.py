@@ -12,15 +12,59 @@ EPS = 1e-10
 PRINT_DIGITS = 3
 
 class Designer:
+    r'''
+    Class for s-sparse actuator schedule design of an LTI system of the form
 
-    ALGORITHMS = {'greedy', 'greedy-b', 'greedy-f', 'mcmc', 'relax'}
+    x(t+1) = A x(t) + B u(t)
 
-    def __init__(self, 
-                 A: Union[List[np.ndarray], np.ndarray],
-                 B: Union[List[np.ndarray], np.ndarray],
-                 sparsity: int,
-                 cost: CostFunction = 'tr-inv',
-                 algo: str = 'greedy-f',
+    Attributes
+    ----------
+    A : np.ndarray
+        State matrix.
+    B : np.ndarray
+        Input-state matrix.
+    n : int
+        Dimension of state x(t).
+    m : int
+        Dimension of control input u(t).
+    cost : str
+        Energy-related cost function to be minimized.
+    sparsity : int
+        Maximal number of input channels that can be scheduled at each time.
+    algo: str
+        Design algorithm.
+
+    Methods
+    --------
+    set_sparsity
+
+    set_cost
+    
+    set_algo
+    
+    design
+    
+    greedy
+    
+    sgreedy_backwards
+    
+    sgreedy_forwards
+    
+    greedy_k
+    
+    mcmc
+
+    '''
+
+    ALL_ALGO = {'greedy', 's-greedy', 's-greedy-b', 'mcmc'}
+
+    def __init__(
+            self, 
+            A: Union[List[np.ndarray], np.ndarray],
+            B: Union[List[np.ndarray], np.ndarray],
+            sparsity: int,
+            cost: CostFunction = 'tr-inv',
+            algo: str = 's-greedy',
     ) -> None:
         self.A = A
         self.n = len(self.A) if isinstance(self.A, np.ndarray) else len(self.A[0])
@@ -32,7 +76,7 @@ class Designer:
         else:
             self.s = sparsity
         
-        if not algo in self.ALGORITHMS:
+        if not algo in self.ALL_ALGO:
             raise NotImplementedError('Requested algorithm not implemented')
         else:
             self.algo = algo
@@ -50,34 +94,87 @@ class Designer:
 
 
     def set_algo(self, algo: str):
-        if not algo in self.ALGORITHMS:
+        if not algo in self.ALL_ALGO:
             raise NotImplementedError('Requested algorithm not implemented')
             
         self.algo = algo
 
 
-    def design(self, *args, **kwargs) -> Tuple[List[List[int]], float]:
+    def design(
+            self, 
+            *args, 
+            **kwargs
+    ) -> Tuple[List[List[int]], float]:
+        '''
+        Runs the design algorithm in self.algo with cost function in self.cost
+
+        Parameters
+        ----
+        *args, **kwargs
+            Arguments required by design algorithm.
+
+        Returns
+        ---
+        schedule: list[list[int]]
+            The actuator schedule.
+        
+        cost_best: float
+            The cost of the actuator schedule.
+
+        '''
         if self.algo == 'greedy':
             return self.greedy(*args, **kwargs)
-        if self.algo == 'greedy-b':
-            return self.greedy_backwards(*args, **kwargs)
         elif self.algo == 'greedy-f':
-            return self.greedy_forward(*args, **kwargs)
+            return self.s_greedy(*args, **kwargs)
+        elif self.algo == 's-greedy-b':
+            return self.s_greedy_backwards(*args, **kwargs)
         elif self.algo == 'mcmc':
             return self.mcmc(*args, **kwargs)
-        elif self.algo == 'relax':
-            pass
     
 
-    def greedy(self, 
-               ch_cand: Union[List[List[int]], NoneType] = None,
-               schedule: Union[List[List[int]], NoneType] = None, 
-               eps: float = 0.,
-               check_rank: bool = False,
-               contr_mat: Union[np.ndarray, NoneType] = None,
-               rank_contr_mat: int = None,
-               A_vec: Union[List[np.ndarray], NoneType] = None
+    def greedy(
+            self, 
+            ch_cand: Union[List[List[int]], NoneType] = None,
+            schedule: Union[List[List[int]], NoneType] = None, 
+            eps: float = 0.,
+            check_rank: bool = False,
+            contr_mat: Union[np.ndarray, NoneType] = None,
+            rank_contr_mat: Union[int, NoneType] = None,
+            A_vec: Union[List[np.ndarray], NoneType] = None
     ) -> Tuple[List[List[int]], float]:
+        '''
+        Runs the naive greedy selection algorithm
+
+        Parameters
+        ----
+        ch_cand: list[list[int]], optional
+            Candidate channels for each time instant. 
+            If None, all channels are selected
+        schedule: list[list[int]], optional
+            Initial partially filled schedule.
+            If None, the schedule is initialized empty.
+        eps: float, optional
+            Slack parameter to compute the cost.
+        check_rank: bool, optional
+            If True, candidate channels that do not increase the rank of the controllability Gramian
+            are removed after each selection
+        contr_mat: np.ndarray, optional
+            Reachability matrix with the selected schedule.
+            Not used if check_rank is False 
+        rank_contr_mat: int, optional
+            Rank of controllability Gramian.
+            Not used if check_rank is False
+        A_vec: list[np.ndarray], optional
+            List with pre-computed matrix powers of A.
+
+        Returns
+        ---
+        schedule: list[list[int]]
+            The actuator schedule
+        
+        cost_best: float
+            The cost of the actuator schedule
+        '''
         if ch_cand is None:
             ch_cand = [list(range(self.m)) for _ in range(self.cost.h)]
 
@@ -176,7 +273,100 @@ class Designer:
         return schedule, cost_best
     
 
-    def greedy_backwards(self) -> Tuple[List[List[int]], float]:
+    def s_greedy(self) -> Tuple[List[List[int]], float]:
+        '''
+        Runs the s-sparse greedy selection algorithm.
+
+        Returns
+        ---
+        schedule: list[list[int]]
+            The actuator schedule.
+        
+        cost_best: float
+            The cost of the actuator schedule.
+        '''
+        schedule_best = [None for _ in range(self.cost.h)]
+        Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
+        col_space_contr_mat = None
+        rk_contr_mat = 0
+        ch_cand = [None for _ in range(self.cost.h)]
+
+        # pre-compute matrices applied to input channels
+        A_all = [np.zeros(self.n)] * self.cost.h
+        A_all[-1] = np.eye(self.n)
+        A_curr = np.eye(self.n)
+        for k in range(1, self.cost.h):
+            A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-k]
+            A_curr = np.matmul(A_curr, A_prev)
+
+            # matrix for input at k-th time step stored at location k
+            A_all[-1-k] = deepcopy(A_curr)
+
+        # first input is unconstrained
+        schedule_best[0] = []
+        ch_cand[0] = list(range(self.m))
+        for k in range(1, self.cost.h):
+            if rk_contr_mat < self.n and np.linalg.matrix_rank(A_all[k-1]) < self.n:
+                
+                # iteration k optimizes the input channels applied at the k-th time step
+                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
+
+                # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
+                im_AB, im_K, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
+
+                # greedily select independent columns among found ones
+                # these are needed for controllability
+                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, Bs, EPS, im_K)
+                
+                # update column space of controllability matrix
+                col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
+                rk_contr_mat += len(schedule_k)
+
+            else:
+                schedule_k = []
+
+            # store schedule
+            schedule_best[k] = deepcopy(schedule_k)
+
+            # store remaining columns, if budget not exhausted
+            if self.s > len(schedule_k):
+                ch_cand[k] = list(set(range(self.m)) - set(schedule_k))
+
+        # greedily select independent columns till controllability Gramian has full rank
+        schedule_best, cost_best = self.greedy(
+            ch_cand,
+            schedule_best,
+            EPS,
+            check_rank=True,
+            contr_mat=col_space_contr_mat,
+            rank_contr_mat=rk_contr_mat,
+            A_vec=A_all
+        )
+        if cost_best == np.inf:
+            raise Warning('System is uncontrollable after rank-aware channel selection')
+        else:
+            print('System is controllable, improving cost')
+
+        # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
+        ch_cand_dep = [list(set(range(self.m)) - set(schedule_k)) for schedule_k in schedule_best]
+        schedule_best, cost_best = self.greedy(ch_cand_dep, schedule_best)
+        
+        return schedule_best, cost_best
+    
+
+    def s_greedy_backwards(self) -> Tuple[List[List[int]], float]:
+        '''
+        Runs the s-sparse greedy selection algorithm backwards,
+        running the first loop that selects the input channels that span the kernels of A^k from k = h-1 to k = 0.
+
+        Returns
+        ---
+        schedule: list[list[int]]
+            The actuator schedule.
+        
+        cost_best: float
+            The cost of the actuator schedule.
+        '''
         schedule_best = [None] * self.cost.h
         Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
         A_curr = np.eye(self.n)
@@ -247,84 +437,38 @@ class Designer:
         return schedule_best, cost_best
 
 
-    def greedy_forward(self) -> Tuple[List[List[int]], float]:
-        schedule_best = [None for _ in range(self.cost.h)]
-        Bs = [self.B] * self.cost.h if isinstance(self.B, np.ndarray) else self.B
-        col_space_contr_mat = None
-        rk_contr_mat = 0
-        ch_cand = [None for _ in range(self.cost.h)]
-
-        # pre-compute matrices applied to input channels
-        A_all = [np.zeros(self.n)] * self.cost.h
-        A_all[-1] = np.eye(self.n)
-        A_curr = np.eye(self.n)
-        for k in range(1, self.cost.h):
-            A_prev = self.A if isinstance(self.A, np.ndarray) else self.A[-k]
-            A_curr = np.matmul(A_curr, A_prev)
-
-            # matrix for input at k-th time step stored at location k
-            A_all[-1-k] = deepcopy(A_curr)
-
-        # first input is unconstrained
-        schedule_best[0] = []
-        ch_cand[0] = list(range(self.m))
-        for k in range(1, self.cost.h):
-            if rk_contr_mat < self.n and np.linalg.matrix_rank(A_all[k-1]) < self.n:
-                
-                # iteration k optimizes the input channels applied at the k-th time step
-                B_curr = self.B if isinstance(self.B, np.ndarray) else self.B[k]
-
-                # columns of B s.t. ColSpace{A^(h-k-1) B_s} complements ColSpace{A^(h-k)}
-                im_AB, im_K, ch_cand_ker = left_kernel(A_all[k], B_curr, A_all[k-1])
-
-                # greedily select independent columns among found ones
-                # these are needed for controllability
-                schedule_k = self.greedy_k(-1-k, B_curr, ch_cand_ker, Bs, EPS, im_K)
-                
-                # update column space of controllability matrix
-                col_space_contr_mat = np.hstack([im_AB[:, schedule_k], col_space_contr_mat]) if col_space_contr_mat is not None else im_AB[:, schedule_k]
-                rk_contr_mat += len(schedule_k)
-
-            else:
-                schedule_k = []
-
-            # store schedule
-            schedule_best[k] = deepcopy(schedule_k)
-
-            # store remaining columns, if budget not exhausted
-            if self.s > len(schedule_k):
-                ch_cand[k] = list(set(range(self.m)) - set(schedule_k))
-
-        # greedily select independent columns till controllability Gramian has full rank
-        schedule_best, cost_best = self.greedy(
-            ch_cand,
-            schedule_best,
-            EPS,
-            check_rank=True,
-            contr_mat=col_space_contr_mat,
-            rank_contr_mat=rk_contr_mat,
-            A_vec=A_all
-        )
-        if cost_best == np.inf:
-            raise Warning('System is uncontrollable after rank-aware channel selection')
-        else:
-            print('System is controllable, improving cost')
-
-        # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
-        ch_cand_dep = [list(set(range(self.m)) - set(schedule_k)) for schedule_k in schedule_best]
-        schedule_best, cost_best = self.greedy(ch_cand_dep, schedule_best)
-        
-        return schedule_best, cost_best
-
-
-    def greedy_k(self,
-                k: int,
-                B_curr: np.ndarray,
-                ch_cand: list[int],
-                Bs: list[np.ndarray],
-                eps: float,
-                rank_mat: np.ndarray
+    def greedy_k(
+            self,
+            k: int,
+            B_curr: np.ndarray,
+            ch_cand: list[int],
+            Bs: list[np.ndarray],
+            eps: float,
+            rank_mat: np.ndarray
     ) -> List[int]:
+        '''
+        Selects columns of B that span the kernels of matrix powers A^k.
+
+        Parameters
+        ----
+        k: int
+            Exponent of matrix power A^k.
+        B_curr: np.ndarray
+            B matrix at step k.
+        ch_cand: list[int]
+            Candidate input channels.
+        Bs: list[np.ndarray]
+            Columns of B selected by the schedule.
+        eps: float
+            Slack parameter to compute the cost.
+        rank_mat: int
+            Rank of controllability Gramian.
+
+        Returns
+        ----
+        schedule_k: list[int]
+            Channels scheduled at time k.
+        '''
         cost_curr_best = np.inf
         Bs_cand = deepcopy(Bs)
         schedule_k = []
@@ -357,15 +501,47 @@ class Designer:
         return schedule_k
     
 
-    def mcmc(self,
-             t_init: float = 1.,
-             t_min: float = 1e-7,
-             a: float = .1,
-             it_max: int = 5000,
-             schedule: Union[List[List[int]], NoneType] = None,
-             eps: float = 0.,
-             check_rank: bool = False
+    def mcmc(
+            self,
+            t_init: float = 1.,
+            t_min: float = 1e-7,
+            a: float = .1,
+            it_max: int = 5000,
+            schedule: Union[List[List[int]], NoneType] = None,
+            eps: float = 0.,
+            check_rank: bool = False
     ) -> Tuple[List[List[int]], float]:
+        '''
+        Runs s-sparse MCMC.
+
+        Parameters
+        ----
+        t_init: float, optional
+            Initial temperature parameter.
+        t_min: float, optional
+            Minimum temperature parameter.
+        a: float, optional
+            Multiplicative stepsize of temperature parameter.
+        it_max: int, optional
+            Number of iterations run with each T.
+        schedule: list[list[int]], optional
+            Initial schedule.
+            If None, the schedule is initialized random.
+        eps: float, optional
+            Slack parameter to compute cost function.
+        check_rank: bool, optional
+            If True, the rank of the controllability Gramian is checked at each selection,
+            until the candidate sample does not decrease the rank.
+
+        Returns
+        ---
+        schedule: list[list[int]]
+            The actuator schedule.
+        
+        cost_best: float
+            The cost of the actuator schedule.
+
+        '''
         if schedule is None:
             schedule = [None] * self.cost.h
             for k in range(self.cost.h):
@@ -376,7 +552,7 @@ class Designer:
             Bs[k] = deepcopy(self.B[:, schedule[k]]) if isinstance(self.B, np.ndarray) else deepcopy(self.B[k][:, schedule[k]])
 
         t = t_init
-        all_col = np.vstack([[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]).tolist()
+        all_col = np.vstack([[[k, ch_k] for ch_k in schedule_k] for k, schedule_k in enumerate(schedule) if len(schedule_k)]).tolist() #type: list
         cost_best = self.cost.compute_robust(self.A, Bs, eps)
         if check_rank:
             rank = self.cost.get_contr_mat_rank()
@@ -414,7 +590,7 @@ class Designer:
                         if not span_kernel:
                             continue
                 
-                cand_sch = deepcopy(schedule[k])
+                cand_sch = deepcopy(schedule[k])  #type: list
                 cand_sch.remove(ch_k)
                 cand_sch.append(cand)
                 Bs[k] = B_curr[:, cand_sch]

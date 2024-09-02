@@ -1,3 +1,4 @@
+from types import NoneType
 import numpy as np
 import scipy
 import warnings
@@ -97,7 +98,7 @@ class CostFunction:
     def update_gramian(self,
                 A: Union[np.ndarray, List[np.ndarray]],
                 B: Union[np.ndarray, List[np.ndarray]],
-                h: int = None
+                h: Union[int, NoneType] = None
     ) -> np.ndarray:
         if h is None:
             h = self.h

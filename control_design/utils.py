@@ -1,3 +1,4 @@
+from types import NoneType
 import warnings
 import numpy as np
 
@@ -6,12 +7,15 @@ from typing import *
 
 EPS = 1e-10
 
-def truncate_float (float_number, decimal_places):
+def truncate_float(float_number, decimal_places):
     multiplier = 10 ** decimal_places
     return int(float_number * multiplier) / multiplier
 
 
-def staircase(R: np.ndarray, tol: float = EPS) -> List[int]:
+def staircase(
+        R: np.ndarray, 
+        tol: float = EPS
+) -> List[int]:
     '''
     Finds indices of linearly independent columns from QR decomposition
     
@@ -39,10 +43,11 @@ def staircase(R: np.ndarray, tol: float = EPS) -> List[int]:
     return ind_col_idx
 
 
-def independent_cols(A: np.ndarray,
-                     B: np.ndarray = None,
-                     B_indep: bool = False
-    ) -> Tuple[np.ndarray, List[int]]:
+def independent_cols(
+        A: Union[np.ndarray, NoneType],
+        B: Union[np.ndarray, NoneType] = None,
+        B_indep: bool = False
+) -> Tuple[np.ndarray, List[int]]:
     '''
     Find linearly independent columns of given matrices.
     If B (resp., A) is None, linearly independent columns of A (resp., B) are returned.
@@ -67,6 +72,7 @@ def independent_cols(A: np.ndarray,
     '''
     if A is None:
         return independent_cols(B, A)
+    
     if B is None:
         R = qr(A, mode='r', check_finite=False)
         ind_col_idx = staircase(R[0])
@@ -89,7 +95,32 @@ def independent_cols(A: np.ndarray,
         ), ind_col_idx
         
 
-def left_kernel(A_k, B, A_prev) -> Tuple[np.ndarray, np.ndarray, List[int]]:
+def left_kernel(
+        A_k: np.ndarray,
+        B: np.ndarray,
+        A_prev: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, List[int]]:
+    '''
+    Finds the columns of B that span the subspace ker((A^(k+1))^T) - ker((A^k)^T)
+        
+    Params
+    ----
+    A_k: np.ndarray,
+        matrix A^k
+    B: np.ndarray,
+        matrix B
+    A_prev: no.ndarray
+        matrix A^(k+1)
+
+    Returns
+    ---
+    im_AB: np.ndarray
+        matrix product A^k B
+    im_K: np.ndarray
+        matrix product [(I - A^(k+1) pinv(A^(k+1))) A^k]^T A^k B
+    ch_ker: list[int]
+        columns of B that span ker((A^(k+1))^T) - ker((A^k)^T)
+    '''
 
     # image of B through A^k
     im_AB = np.matmul(A_k, B)
