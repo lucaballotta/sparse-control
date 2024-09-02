@@ -12,6 +12,43 @@ EPS = 1e-10
 COST_FUNCTIONS = {'logdet', 'tr', 'tr-inv', 'lambda-min'}
 
 class CostFunction:
+    r'''
+    Class for computation of cost function used in control design problem.
+
+    Attributes
+    ----
+    cost_func: str
+        Function of the controllability Gramian.
+    h: int
+        Time horizon.
+    _contr_mat: np.ndarray
+        Reachability matrix of actuator schedule.
+    _W: np.ndarray
+        controllability Gramian of actuator schedule.
+
+    Methods
+    ----
+    get_gramian
+
+    get_contr_mat_rank
+
+    compute
+
+    compute_robust
+    
+    log_det_cost
+
+    trace_cost
+
+    trace_inv_cost
+
+    lambda_min_cost
+
+    update_gramian
+
+    _add_to_gramian
+
+    '''
 
     def __init__(self, h: int, cost_func: str) -> None:
         if cost_func not in COST_FUNCTIONS:
@@ -34,11 +71,30 @@ class CostFunction:
         return np.linalg.matrix_rank(self._contr_mat)
     
 
-    def compute(self,
-                A: Union[np.ndarray, List[np.ndarray]],
-                B: Union[np.ndarray, List[np.ndarray]],
-                eps: float = 0.
+    def compute(
+        self,
+        A: Union[np.ndarray, List[np.ndarray]],
+        B: Union[np.ndarray, List[np.ndarray]],
+        eps: float = 0.
     ) -> float:
+        '''
+        Evaluates the cost function.
+
+        Parameters
+        ----
+        A: np.ndarray
+            State matrix A.
+        B: np.ndarray or list[np.ndarray]
+            Input-state matrix B or list of submatrices of B according to actuator schedule,
+            where the index in the list corresponds to the time instant.
+        eps: float, optional
+            Slack to compute the cost function.
+
+        Returns
+        ----
+        cost: float,
+            the value of the cost function.
+        '''
         self.update_gramian(A, B)
         if self.cost_func == 'logdet':
             return self.log_det_cost(eps)
@@ -53,29 +109,61 @@ class CostFunction:
     def compute_robust(self,
                        A: Union[np.ndarray, List[np.ndarray]],
                        B: Union[np.ndarray, List[np.ndarray]],
-                       eps: float = 0.
+                       eps: float = 0.,
+                       step: float = 5.
     ) -> float:
+        '''
+        Approximately evaluates the cost function by iteratively increasing the slack
+        parameter until the computation is successful.
+
+        Parameters
+        ----
+        A: np.ndarray
+            State matrix A.
+        B: np.ndarray or list[np.ndarray]
+            Input-state matrix B or list of submatrices of B according to actuator schedule,
+            where the index in the list corresponds to the time instant.
+        eps: float, optional
+            Slack to compute the cost function.
+            If the first iteration is unsuccessful, the minimal subsequent value of eps is set to 1e-12.
+        step:
+            Multiplicative step that increases the slack after each unsuccessful computation.
+
+        Returns
+        ----
+        cost: float,
+            the value of the cost function.
+        '''
         done = False
         while not done:
             try:
-                cost_best = self.compute(A, B, eps)
+                cost = self.compute(A, B, eps)
                 done = True
             except LinAlgError:
-                eps = max(EPS, 5 * eps)
+                eps = max(EPS, step * eps)
 
-        return cost_best
+        return cost
 
 
     def log_det_cost(self, eps: float = 0.) -> float:
+        '''
+        Evaluates the function -log(det(W + eps I)).
+        '''
         _, logabsdet = np.linalg.slogdet(self._W + eps * np.eye(len(self._W)))
         return -logabsdet
 
 
     def trace_cost(self) -> float:
+        '''
+        Evaluates the function 1/Tr(W).
+        '''
         return 1/np.trace(self._W)
     
 
     def trace_inv_cost(self, eps: float = 0.) -> float:
+        '''
+        Evaluates the function Tr(W^(-1) + eps I).
+        '''
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             fxn()
@@ -91,6 +179,9 @@ class CostFunction:
 
 
     def lambda_min_cost(self, eps: float = 0.) -> float:
+        '''
+        Evaluates the function 1\lambda_min(W + eps I)
+        '''
         singular_values = np.linalg.svd(self._W + eps * np.eye(len(self._W)), compute_uv=False)
         return 1/min(singular_values) if singular_values.all() else np.inf
     
@@ -100,6 +191,20 @@ class CostFunction:
                 B: Union[np.ndarray, List[np.ndarray]],
                 h: Union[int, NoneType] = None
     ) -> np.ndarray:
+        '''
+        Computes the controllability Gramian.
+
+        Parameters
+        ----
+        A: np.ndarray
+            State matrix A.
+        B: np.ndarray or list[np.ndarray]
+            Input-state matrix B or list of submatrices of B according to actuator schedule,
+            where the index in the list corresponds to the time instant.
+        h: int
+            Time horizon of the reachability matrix.
+            If None, the attribute self.h is used.
+        '''
         if h is None:
             h = self.h
 
@@ -124,6 +229,9 @@ class CostFunction:
                        B: np.ndarray, 
                        k: int
     ) -> None:
+        '''
+        Adds the term A^k B to the reachability matrix and the associated term A^k B B^T (A^k)^T.
+        '''
         phi_k = np.matmul(np.linalg.matrix_power(A, k), B)
         self._contr_mat = np.hstack([phi_k, self._contr_mat])
         self._W = self._W + np.matmul(phi_k, phi_k.T)
