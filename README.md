@@ -1,10 +1,23 @@
 # Sparse-control
 Code for control design algorithms and experiments in paper "Pointwise-Sparse Actuator Scheduling for Linear Systems with Controllability Guarantee" by L. Ballotta, G. Joseph, and I. R. Thete.
+For a given LTI system of the form
+
+$$ x(t+1) = Ax(t) + B(t)x(t) \qquad t = 0,1,\dota, h-1$$
+
+the algorithms compute an $s$-sparse actuator schedule $S = (S_0, S_1, \dots, S_{h-1})$ where each $S_k$ contains the indices of the actuators that are active at time $k$, under the point-wise sparsity constraint $|S_k| \le s \ \forall k$.
+Specifically, given dimension $n$ of the state $x$, the algorithms attempt to heuristicaly solve the optimization problem
+
+$$ \min_S \quad \rho(W_S)$$
+$$ \mbox{subject to} |S_k| \le s \ \forall k $$
+$$ \hspace{2cm}      \mathrm{rk}(W_S) = n$$
+
+where $W_S$ is the controllability Gramian under schedule $S$, $\rho(W_S)$ is a performance metric related to the control energy, and the rank constraint enforces controllability with the scheduled channels.
+The $s$-sparse greedy algorithm _s_greedy_ in _control_design/control_design.py_ provides formal controllability guarantees under the sparsity constraint.
 
 ## How to run
 There are two runnable scripts:
-- _main.py_ performs the control design for given LTI system (_A_,_B_), sparsity constraint _s_, and time horizon _h_ comparing different algorithms;
-- _main_s.py_ performs the control design for given LTI system (_A_,_B_) and time horizon _h_ with _s_-sparse greedy and _s_-sparse MCMC for a given range of sparsity constraints [_s_min_, _s_max_];
+- _main.py_ performs the control design for given LTI system ($A,B$), sparsity constraint $s$, and time horizon $h$ comparing different algorithms;
+- _main_s.py_ performs the control design for given LTI system ($A,B$) and time horizon $h$ with $s$-sparse greedy and $s$-sparse MCMC for a given range of sparsity constraints $[s_\text{min},s_\text{max}]$;
 - _plotter_s.py_ plots the two cost curves obtained with _main_s.py_ analogously to Fig. 1 in the paper.
 
 The design algorithms are defined in _control_design/control_design.py_.
