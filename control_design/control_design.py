@@ -46,9 +46,9 @@ class Designer:
     
     greedy
     
-    sgreedy_backwards
+    s_greedy
     
-    sgreedy_forwards
+    s_greedy_backwards
     
     greedy_k
     
