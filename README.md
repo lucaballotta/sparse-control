@@ -2,7 +2,7 @@
 Code for control design algorithms and experiments in paper "Pointwise-Sparse Actuator Scheduling for Linear Systems with Controllability Guarantee" by L. Ballotta, G. Joseph, and I. R. Thete.
 For a given LTI system of the form
 
-$$ x(t+1) = Ax(t) + B(t)x(t) \qquad t = 0,1,\dota, h-1$$
+$$ x(t+1) = Ax(t) + B(t)x(t) \qquad t = 0,1,\dots, h-1$$
 
 the algorithms compute an $s$-sparse actuator schedule $S = (S_0, S_1, \dots, S_{h-1})$ where each $S_k$ contains the indices of the actuators that are active at time $k$, under the point-wise sparsity constraint $|S_k| \le s \ \forall k$.
 Specifically, given dimension $n$ of the state $x$, the algorithms attempt to heuristicaly solve the optimization problem
