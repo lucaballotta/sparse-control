@@ -8,7 +8,9 @@ the algorithms compute an $s$-sparse actuator schedule $S = (S_0, S_1, \dots, S_
 Specifically, given dimension $n$ of the state $x$, the algorithms attempt to heuristicaly solve the optimization problem
 
 $$ \min_S \quad \rho(W_S)$$
+
 $$ \mbox{subject to} |S_k| \le s \ \forall k $$
+
 $$ \hspace{2cm}      \mathrm{rk}(W_S) = n$$
 
 where $W_S$ is the controllability Gramian under schedule $S$, $\rho(W_S)$ is a performance metric related to the control energy, and the rank constraint enforces controllability with the scheduled channels.
