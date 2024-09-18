@@ -25,11 +25,6 @@ elif exp_id == 4:
 elif exp_id == 5:
     from examples.ex5 import *
 
-## set sparsity constraint
-sparsity = max(len(A) - matrix_rank(A), 1)
-print('\n')
-print(f'sparsity: {sparsity}')
-
 ## set time horizon
 h = len(A)
 
@@ -42,8 +37,13 @@ cost_func = CostFunction(h, cost)
 cost_fully_actuated = cost_func.compute(A, B)
 print(f'cost fully actuated: {cost_fully_actuated} \n')
 
+## set sparsity constraint
+sparsity = max(len(A) - matrix_rank(A), 1)
+print('\n')
+print(f'sparsity: {sparsity}')
+
 ### s-sparse greedy
-algo = 'greedy-f'
+algo = 's-greedy'
 designer = Designer(A, B, sparsity, cost_func, algo)
 schedule_s_greedy, cost_s_greedy = designer.design()
 schedule_s_greedy = [schedule_k for schedule_k in schedule_s_greedy if len(schedule_k) > 0]

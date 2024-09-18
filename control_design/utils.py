@@ -1,8 +1,8 @@
-from types import NoneType
 import warnings
 import numpy as np
 
 from scipy.linalg import qr
+from types import NoneType
 from typing import *
 
 EPS = 1e-10
