@@ -72,6 +72,8 @@ u_2 = matlabFunction(u_2);
 % Perform the simulation
 y = lsim(sys, [u_1(t); u_2(t)], t);
 
+% Do something
+
 % ------ PRINTING ------ %
 
 % Print something about the system
