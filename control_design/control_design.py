@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 
 from typing import *
 from types import NoneType
@@ -71,8 +72,9 @@ class Designer:
         self.B = B
         self.m = len(self.B[0]) if isinstance(self.B, np.ndarray) else len(self.B[0][0])
         self.cost = cost
-        if sparsity <= 0:
-            raise ValueError('InputError: sparsity value must be positive')
+        self.s_min = max(1, self.n - np.linalg.matrix_rank(self.A))
+        if sparsity < self.s_min:
+            raise ValueError(f'InputError: sparsity must be at least{self.s_min}')
         else:
             self.s = sparsity
         
@@ -84,7 +86,7 @@ class Designer:
 
     def set_sparsity(self, sparsity: int):
         if sparsity <= 0:
-            raise ValueError('InputError: sparsity value must be positive')
+            raise ValueError(f'InputError: sparsity value must be at least{self.s_min}')
         
         self.s = sparsity
 
@@ -95,8 +97,10 @@ class Designer:
 
     def set_algo(self, algo: str):
         if not algo in self.ALL_ALGO:
-            raise NotImplementedError('Requested algorithm not implemented')
-            
+            warnings.warn('Requested algorithm not implemented, setting default (greedy)', 
+                          category=UserWarning)
+            algo = 'greedy'
+
         self.algo = algo
 
 
@@ -124,7 +128,7 @@ class Designer:
         '''
         if self.algo == 'greedy':
             return self.greedy(*args, **kwargs)
-        elif self.algo == 'greedy-f':
+        elif self.algo == 's-greedy':
             return self.s_greedy(*args, **kwargs)
         elif self.algo == 's-greedy-b':
             return self.s_greedy_backwards(*args, **kwargs)

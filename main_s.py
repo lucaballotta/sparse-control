@@ -10,7 +10,7 @@ from control_design.cost_function import CostFunction
 save_result = True
 
 # import model matrices A and B
-exp_id = 5
+exp_id = 2
 if exp_id == 1:
     from examples.ex1 import *
 elif exp_id == 2:
@@ -46,7 +46,7 @@ for s in s_vec:
     designer.set_sparsity(s)
 
     # s-sparse greedy
-    designer.set_algo('greedy-f')
+    designer.set_algo('s-greedy')
     schedule_s_greedy, cost_s_greedy = designer.design()
     schedule_s_greedy = [schedule_k for schedule_k in schedule_s_greedy if len(schedule_k) > 0]
     cost_s_greedy_all[s] = cost_s_greedy
