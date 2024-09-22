@@ -76,6 +76,8 @@ y = lsim(sys, [u_1(t); u_2(t)], t);
 
 % Do something else
 
+% One more last nonsense
+
 % ------ PRINTING ------ %
 
 % Print something about the system
