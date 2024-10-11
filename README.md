@@ -27,6 +27,7 @@ The cost functions are defined in _control_design/cost_function.py_.
 For more details, please see the documentation in the scripts.
 
 ## Link to papers
+IEEEXplore: https://ieeexplore.ieee.org/document/10706838
 Arxiv: https://arxiv.org/abs/2407.12125
 
 Please cite as: L. Ballotta, G. Joseph and I. R. Thete, "Pointwise-Sparse Actuator Scheduling for Linear Systems with Controllability Guarantee," in _IEEE Control Systems Letters_, 2024.
