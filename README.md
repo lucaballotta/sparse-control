@@ -38,9 +38,8 @@ Citation:
   journal={IEEE Control Systems Letters}, 
   title={Pointwise-Sparse Actuator Scheduling for Linear Systems With Controllability Guarantee}, 
   year={2024},
-  volume={},
-  number={},
-  pages={1-1},
+  volume={8},
+  pages={2361 - 2366},
   doi={10.1109/LCSYS.2024.3475886}
 }
 ```
