@@ -1,5 +1,8 @@
+from itertools import combinations
+
 import warnings
 import numpy as np
+import control as ct
 
 from scipy.linalg import qr
 from types import NoneType
@@ -142,3 +145,26 @@ def left_kernel(
 
 def fxn() -> None:
     warnings.warn("deprecated", DeprecationWarning)
+
+
+def get_q_redundant_controllable(A, B) -> int:
+    # NOTE: This is my own interpretation, with a placeholder name: it might very well not be consistent with literature
+    #: Extract the dimensions
+    n_x, n_u = A.shape[0], B.shape[1]
+    #: Check if the system is controllable
+    if not np.linalg.matrix_rank(ct.ctrb(A, B)) == n_x:
+        warnings.warn("The system is not controllable", Warning, stacklevel=2)
+        return 0
+    #: Initizalize q
+    q_current, q_max = 1, 0
+    while q_current < n_u:
+        #: Loop over all permutations
+        for comb in combinations(range(n_u), n_u - q_current):
+            #: Check if controllable
+            if np.linalg.matrix_rank(ct.ctrb(A, B[:, comb])) == n_x:
+                #: Save the value
+                q_max = np.max([q_current, q_current])
+        #: Increase the counter
+        q_current += 1
+    #: Return the result
+    return q_max

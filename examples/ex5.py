@@ -1,8 +1,8 @@
 import numpy as np
 import networkx as nx
 
-n = 50
-m = 50
+n = 10
+m = 10
 d = .1
 
 G = nx.random_geometric_graph(n, d)

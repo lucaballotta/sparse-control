@@ -1,5 +1,8 @@
 import numpy as np
+import scipy as sp
+import control as ct
 import warnings
+import copy
 
 from typing import *
 from types import NoneType
@@ -57,7 +60,7 @@ class Designer:
 
     '''
 
-    ALL_ALGO = {'greedy', 's-greedy', 's-greedy-b', 'mcmc'}
+    ALL_ALGO = {'greedy', 's-greedy', 's-greedy-b', 'mcmc', 'backward-greedy'}
 
     def __init__(
             self, 
@@ -134,6 +137,8 @@ class Designer:
             return self.s_greedy_backwards(*args, **kwargs)
         elif self.algo == 'mcmc':
             return self.mcmc(*args, **kwargs)
+        elif self.algo == 'backward-greedy':
+            return self.backwards_greedy(*args, **kwargs)
     
 
     def greedy(
@@ -252,7 +257,7 @@ class Designer:
                     cost_best = np.inf
 
             else:
-                print('attempt random selection')
+                # print('attempt random selection')
                 if counter_no_improve == counter_no_improve_max:
                     break
 
@@ -276,6 +281,193 @@ class Designer:
             
         return schedule, cost_best
     
+
+    def backwards_greedy(
+            self, 
+            ch_cand: Union[List[List[int]], NoneType] = None,
+            schedule: Union[List[List[int]], NoneType] = None, 
+            eps: float = 0.,
+            check_rank: bool = False,
+            contr_mat: Union[np.ndarray, NoneType] = None,
+            rank_contr_mat: Union[int, NoneType] = None,
+            A_vec: Union[List[np.ndarray], NoneType] = None
+    ) -> Tuple[List[List[int]], float]:
+        
+        def get_cyclic_gramian(A: np.ndarray, B: list, h: int, gram_type: str = self.gram_type) -> np.ndarray:
+            '''
+            Computes the cyclic controllability Gramian.
+            '''
+
+            def get_periodic_linear_systems(sys_list: list, type: str) -> list[ct.StateSpace]:
+                # FROM: "Zeros of discrete-time linear periodic systems", Bolzern et al. (1986)
+                # FROM: "Input and output decoupling zeros of linear periodic discrete-time systems", Grasselli et al. (1991)
+                #: Check the period T
+                N, n_x, n_u, n_y, h = len(sys_list), sys_list[0].nstates, sys_list[0].ninputs, sys_list[0].noutputs, sys_list[0].dt
+                #: Initialize the empty list
+                sys_per_list = []
+                #: Check the type
+                match type:
+                    case 'lifted':
+                        for k in range(N):
+                            #: Cycle the list
+                            sys_list_k = copy.deepcopy(sys_list)
+                            sys_list_k = sys_list[k:] + sys_list[:k]
+                            #: Create the matrices
+                            # FIXME: This needs to be double-checked...
+                            E_k = np.linalg.multi_dot([sys_list_k[-(t + 1)].A for t in range(N)] if N > 1 else [sys_list_k[0].A, np.eye(n_x)])
+                            J_k = np.column_stack([np.linalg.multi_dot([sys_list_k[-(q + 1)].A for q in range(N - t - 1)] if t < N - 2 else [sys_list_k[-1].A, np.eye(n_x)]) @ sys_list_k[t].B if t < N - 1 else sys_list_k[t].B for t in range(N)])
+                            L_k = np.row_stack([sys_list_k[t].C @ np.linalg.multi_dot([sys_list_k[t - (q + 1)].A for q in range(t)] if t > 1 else [sys_list_k[0].A, np.eye(n_x)]) if t > 0 else sys_list_k[t].C for t in range(N)])
+                            M_k = np.sum([sp.linalg.block_diag(np.empty((t * n_y, 0)), *[(sys_list_k[t + q].C @ np.linalg.multi_dot([sys_list_k[p].A for p in range(t - 1 + q, q, -1)] if t > 2 else [sys_list_k[t - 1 + q].A, np.eye(n_x)]) @ sys_list_k[q].B) if t > 1 else sys_list_k[t + q].C @ sys_list_k[q].B for q in range(N - t)], np.empty((0, t * n_u))) for t in range(1, N)] + [sp.linalg.block_diag(*[sys_list_k[q].D for q in range(N)])], axis=0)
+                            #: Construct the periodic system
+                            sys_per_list.append(ct.ss(E_k, J_k, L_k, M_k, dt=h))
+                    case 'cyclic':
+                        # FROM: "Analysis of discrete-time linear periodic systems", Bittanti et al. (1996)
+                        for k in range(N):
+                            #: Cycle the list
+                            sys_list_k = copy.deepcopy(sys_list)
+                            sys_list_k = sys_list[k:] + sys_list[:k]
+                            #: Create the matrices
+                            F_k = np.sum([sp.linalg.block_diag(np.empty((n_x, 0)), *[sys_list_k[q].A for q in range(N - 1)], np.empty((0, n_x)))] + [np.block([[np.zeros((n_x, (N - 1) * n_x)), sys_list_k[-1].A], [np.zeros(((N - 1) * n_x, N * n_x))]])], axis=0)
+                            G_k = np.sum([sp.linalg.block_diag(np.empty((n_x, 0)), *[sys_list_k[q].B for q in range(N - 1)], np.empty((0, n_u)))] + [np.block([[np.zeros((n_x, (N - 1) * n_u)), sys_list_k[-1].B], [np.zeros(((N - 1) * n_x, N * n_u))]])], axis=0)
+                            H_k = sp.linalg.block_diag(*[sys_list_k[t].C for t in range(N)])
+                            E_k = sp.linalg.block_diag(*[sys_list_k[t].D for t in range(N)])
+                            #: Construct the periodic system
+                            sys_per_list.append(ct.ss(F_k, G_k, H_k, E_k, dt=h))
+                    case _:
+                        raise ValueError(f"Unrecognized type '{type}'")
+                #: Return the results
+                return sys_per_list
+
+            #: Select which system to use
+            match gram_type:
+                case 'inf-cyclic':
+                    #: Compute the cyclic system representation
+                    sys_cyclic = get_periodic_linear_systems([ct.ss(A, B[k], np.eye(A.shape[0]), np.zeros((A.shape[0], B[k].shape[1]))) for k in range(h)], 'cyclic')[0]
+                    #: Check if the system is both stable and controllable
+                    if not np.all(np.abs(np.linalg.eigvals(sys_cyclic.A)) < 1):
+                        raise ValueError('Error: system is not stable')
+                    if not np.linalg.matrix_rank(ct.ctrb(sys_cyclic.A, sys_cyclic.B)) == sys_cyclic.nstates:
+                        raise ValueError('Error: system is not controllable')
+                    #: Compute the Gramiam
+                    try:
+                        # FIXME: This computation is actually the one taking a really long time...
+                        W = ct.dlyap(sys_cyclic.A, sys_cyclic.B @ sys_cyclic.B.T)
+                    except np.linalg.LinAlgError:
+                        raise ValueError('Error: cyclic Gramian computation failed')
+                case 'inf-lifted':
+                    #: Compute the cyclic system representation
+                    sys_cyclic = get_periodic_linear_systems([ct.ss(A, B[k], np.eye(A.shape[0]), np.zeros((A.shape[0], B[k].shape[1]))) for k in range(h)], type='lifted')[0]
+                    #: Check if the system is both stable and controllable
+                    if not np.all(np.abs(np.linalg.eigvals(sys_cyclic.A)) < 1):
+                        raise ValueError('Error: system is not stable')
+                    if not np.linalg.matrix_rank(ct.ctrb(sys_cyclic.A, sys_cyclic.B)) == sys_cyclic.nstates:
+                        raise ValueError('Error: system is not controllable')
+                    #: Compute the Gramiam
+                    try:
+                        # FIXME: This computation is actually the one taking a really long time...
+                        W = ct.dlyap(sys_cyclic.A, sys_cyclic.B @ sys_cyclic.B.T)
+                    except np.linalg.LinAlgError:
+                        raise ValueError('Error: cyclic Gramian computation failed')
+                case 'finite':
+                    #: Compute the controllability matrix
+                    Phi = np.column_stack([np.linalg.matrix_power(A, k) @ B[k] for k in range(h)])
+                    #: Compute the Gramian
+                    W = Phi @ Phi.T
+                    #: Raise an error is not controllable
+                    if np.linalg.matrix_rank(Phi) < self.n:
+                        raise ValueError('Error: system is not controllable')
+                case _:
+                    raise ValueError(f"Error: Gramian type '{gram_type}' not recognized")
+            #: Return the result
+            return W
+        
+        def compute_cost(W: np.ndarray, cost_type: str = self.cost.cost_func) -> float:
+            """
+            Compute the cost of the schedule, based on the minimum eigenvalue of the cyclic Gramian.
+            """
+            #: Match the cost
+            match cost_type:
+                case 'lambda-min':
+                    #: Compute the minimal eigenvalue
+                    eigvals = np.linalg.eigvals(W)
+                    if np.min(eigvals) <= 0:
+                        raise ValueError(f'Error: cyclic Gramian is not positive definite, system is not controllable: eig(W) = {np.round(eigvals, 3)}')
+                    #: Compute the cost
+                    cost_val = 1 / np.min(eigvals.real) if np.min(eigvals.real) > 0 else np.inf
+                case 'tr-inv':
+                    #: Try to compute the inverse
+                    try:
+                        W_inv = np.linalg.inv(W)
+                    except np.linalg.LinAlgError:
+                        raise ValueError('Error: cyclic Gramian is singular, system is not controllable')
+                    #: Compute the cost
+                    cost_val = np.trace(W_inv)
+                case 'logdet':
+                    #: Try to compute the log determinant
+                    try:
+                        logdet = -np.log(np.linalg.det(W))
+                    except np.linalg.LinAlgError:
+                        raise ValueError('Error: cyclic Gramian is singular, system is not controllable')
+                    #: Compute the cost
+                    cost_val = logdet
+                case _:
+                    raise ValueError(f"Error: cost function '{cost_type}' not implemented")
+            #: Return the cost
+            return cost_val
+        
+        #: Retrieve the dimensions
+        A, B, n_x, n_u, N = self.A, self.B, self.A.shape[0], self.B.shape[1], self.cost.h
+        #: Check the initial list
+        if ch_cand is None:
+            ch_cand = [[ell for ell in range(n_u)] for _ in range(N)]
+            B_cand = [B[:, sorted(ch_cand[k])] for k in range(N)]
+            B_cand_zeros = [B @ (np.eye(n_u) * np.isin(range(n_u), sorted(ch_cand[k]))[:, None]) for k in range(N)]
+        #: Compute the initial Gramian
+        W_0 = get_cyclic_gramian(A, B_cand_zeros, N)
+        #: Compute the cost for the initial schedule 
+        # FIXME: Now we always just use minimum eigenvalue
+        cost_0, cost_now = compute_cost(W_0), compute_cost(W_0)
+        #: Set the condition
+        is_sparse = False
+        #: Enter while loop
+        while not is_sparse:
+            #: Compute the sparsity of the current schedule
+            sparsity_now = max([len(ch_cand[k]) for k in range(N)])
+            #: Do the check
+            if sparsity_now <= self.s:
+                is_sparse = True
+                break
+            #: Extract all valid schedules removing
+            remove_cand = [sorted(ch_cand[k]) if len(ch_cand[k]) > self.s else None for k in range(N)]
+            #: Compute the cost for all removed candidates
+            k_best, idx_best, cost_best = None, None, np.inf
+            for k in range(N):
+                #: Check if we need to skip this index
+                if remove_cand[k] is None:
+                    continue
+                for idx_act in remove_cand[k]:
+                    #: Check the 'new' schedule with actuator removed
+                    check_cand = [ch_cand[k_prime] if k_prime != k else [elem for elem in ch_cand[k] if elem != idx_act] for k_prime in range(N)]
+                    #: Compute the candidate cost
+                    # TODO: Check with removing columns
+                    B_check_zeros = [B @ (np.eye(n_u) * np.isin(range(n_u), sorted(check_cand[k]))[:, None]) for k in range(N)]
+                    try:
+                        W_check = get_cyclic_gramian(A, B_check_zeros, N)
+                    except ValueError:  # Removing this actuator makes the system uncontrollable
+                        W_check = None
+                    cost_check = compute_cost(W_check) if W_check is not None else np.inf
+                    #: Check if better
+                    if cost_check < cost_best:
+                        k_best, idx_best, cost_best = k, idx_act, cost_check
+            #: Compute the new schedule
+            if k_best is None:
+                raise RuntimeError(f'Error: no valid actuator to remove (without losing controllability), current schedule: {ch_cand}')
+            ch_cand[k_best].remove(idx_best)
+        #: Set the final schedule and cost
+        schedule = deepcopy(ch_cand)
+        cost = compute_cost(get_cyclic_gramian(A, [B @ (np.eye(n_u) * np.isin(range(n_u), sorted(schedule[k]))[:, None]) for k in range(N)], N))
+        return schedule, cost
+
 
     def s_greedy(self) -> Tuple[List[List[int]], float]:
         '''
@@ -347,9 +539,11 @@ class Designer:
             A_vec=A_all
         )
         if cost_best == np.inf:
-            raise Warning('System is uncontrollable after rank-aware channel selection')
+            # raise Warning('System is uncontrollable after rank-aware channel selection')
+            pass
         else:
-            print('System is controllable, improving cost')
+            # print('System is controllable, improving cost')
+            pass
 
         # greedy selection of remaining columns across whole controllability matrix, if budget not exhausted
         ch_cand_dep = [list(set(range(self.m)) - set(schedule_k)) for schedule_k in schedule_best]

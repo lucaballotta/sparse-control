@@ -1,6 +1,7 @@
 from types import NoneType
 import numpy as np
 import scipy
+import control as ct
 import warnings
 
 from typing import *
@@ -9,7 +10,7 @@ from matplotlib.pylab import LinAlgError
 from .utils import fxn
 
 EPS = 1e-10
-COST_FUNCTIONS = {'logdet', 'tr', 'tr-inv', 'lambda-min'}
+COST_FUNCTIONS = {'logdet', 'tr', 'tr-inv', 'lambda-min', 'logdet_cyclic'}
 
 class CostFunction:
     r'''
@@ -96,7 +97,7 @@ class CostFunction:
             the value of the cost function.
         '''
         self.update_gramian(A, B)
-        if self.cost_func == 'logdet':
+        if self.cost_func in ['logdet', 'logdet_cyclic']:
             return self.log_det_cost(eps)
         elif self.cost_func == 'tr':
             return self.trace_cost()
@@ -152,7 +153,6 @@ class CostFunction:
         _, logabsdet = np.linalg.slogdet(self._W + eps * np.eye(len(self._W)))
         return -logabsdet
 
-
     def trace_cost(self) -> float:
         '''
         Evaluates the function 1/Tr(W).
@@ -205,8 +205,50 @@ class CostFunction:
             Time horizon of the reachability matrix.
             If None, the attribute self.h is used.
         '''
+
+        def get_cyclic_gramian(A: np.ndarray, B: list, h: int) -> np.ndarray:
+            '''
+            Computes the cyclic controllability Gramian.
+            '''
+
+            def get_lifted_periodic_linear_systems_cyclic(sys_list: list) -> ct.StateSpace:
+                #: Find the dimensions
+                n_x, n_u = sys_list[0].nstates, sys_list[0].ninputs
+                #: Create the matrices
+                F_k = np.sum([scipy.linalg.block_diag(np.empty((n_x, 0)), *[sys_list[q].A for q in range(h - 1)], np.empty((0, n_x)))] + [np.block([[np.zeros((n_x, (h - 1) * n_x)), sys_list[-1].A], [np.zeros(((h - 1) * n_x, h * n_x))]])], axis=0)
+                G_k = np.sum([scipy.linalg.block_diag(np.empty((n_x, 0)), *[sys_list[q].B for q in range(h - 1)], np.empty((0, n_u)))] + [np.block([[np.zeros((n_x, (h - 1) * n_u)), sys_list[-1].B], [np.zeros(((h - 1) * n_x, h * n_u))]])], axis=0)
+                H_k = scipy.linalg.block_diag(*[sys_list[t].C for t in range(h)])
+                E_k = scipy.linalg.block_diag(*[sys_list[t].D for t in range(h)])
+                #: Compute the system
+                sys = ct.ss(F_k, G_k, H_k, E_k)
+                #: Return the result
+                return sys
+
+            #: Reformat the B array
+            # TEMP: 
+            #
+            print(B)
+            #
+            B = [b if b.shape[1] > 0 else np.zeros((A.shape[0], 1)) for b in B]
+            #: Compute the cyclic system representation
+            sys_cyclic = get_lifted_periodic_linear_systems_cyclic([ct.ss(A, B[k], np.eye(A.shape[0]), np.zeros((A.shape[0], B[k].shape[1]))) for k in range(h)])
+            #: Compute the Gramiam
+            # FIXME: This does NOT work: it will throw an np.linalg.LinAlgError error, which will be caught by the outer loop, and then the slack will be increased (which will result in an infinite loop).
+            try:
+                W = ct.dlyap(sys_cyclic.A, sys_cyclic.B @ sys_cyclic.B.T)
+            except LinAlgError:
+                raise ValueError('Error: cyclic Gramian computation failed')
+            #: Return the result
+            return W
+        
         if h is None:
             h = self.h
+
+        if 'cyclic' in self.cost_func:
+            self._contr_mat = None
+            W = get_cyclic_gramian(A, B, h)
+            self._W = W
+            return
 
         if isinstance(A, np.ndarray) and isinstance(B, np.ndarray):
             self._contr_mat = B
